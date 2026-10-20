@@ -730,6 +730,7 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "crypto.hashOneshot",
   "crypto.timingSafeEqual",
   "crypto.timingSafeEqualDyn",
+  "crypto.getCipherInfo",
   "crypto.randomFill",
   "crypto.randomFillRest",
   "crypto.randomInt",

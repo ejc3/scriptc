@@ -3347,6 +3347,8 @@ export class Lowerer {
       classImplementedProtocol: (type) => this.classImplementedProtocol(type),
       isStdlibFile: this.isStdlibFile,
       isNpmFile: this.isNpmFile,
+      runtimeOptionalField: (shapeId, field) =>
+        this.runtimeOptionalFields.add(this.runtimeOptionalFieldKey(shapeId, field)),
       isExternalTypeFile: (sf) =>
         this.externalTypeSpecifiersByFile.has(tsgoPath(resolve(sf.fileName))),
       typeMemo: this.typeMemo,

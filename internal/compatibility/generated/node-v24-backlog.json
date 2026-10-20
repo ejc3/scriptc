@@ -3,19 +3,19 @@
   "nodeVersion": "24.22.0",
   "nodeCommit": "f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93",
   "summary": {
-    "taskCount": 3454,
-    "tierItemCount": 3454,
+    "taskCount": 3453,
+    "tierItemCount": 3453,
     "tiers": {
       "static": {
         "audit-partial": 1197,
         "verify-gap": 2130,
-        "replace-refusal": 40,
+        "replace-refusal": 39,
         "classify": 2,
         "implement": 85
       }
     },
     "priorities": {
-      "high": 2287,
+      "high": 2286,
       "normal": 695,
       "low": 472
     }
@@ -7180,31 +7180,6 @@
           "verification": "registry-gap",
           "confidence": "low",
           "source": "compiler-unmatched:crypto",
-          "tests": []
-        }
-      }
-    },
-    {
-      "id": "crypto:7c8bb668e4c8",
-      "chapter": "crypto",
-      "label": "crypto.getCipherInfo(nameOrNid[, options])",
-      "signature": "`crypto.getCipherInfo(nameOrNid[, options])`",
-      "apiSymbol": "crypto.getCipherInfo",
-      "docsUrl": "https://nodejs.org/docs/v24.22.0/api/crypto.html#cryptogetcipherinfonameornid-options",
-      "nodeStability": {
-        "index": "2",
-        "level": 2,
-        "text": "Stable",
-        "inherited": true
-      },
-      "priority": "high",
-      "tiers": {
-        "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
-          "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.crypto.getCipherInfo",
           "tests": []
         }
       }

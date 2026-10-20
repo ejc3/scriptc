@@ -818,6 +818,22 @@ export function lowerCryptoModuleCall(
       loc,
     };
   }
+  // crypto.getCipherInfo(nameOrNid[, options]): the runtime's copy of
+  // OpenSSL's cipher table answers with Node's argument checks, as a
+  // checked-dynamic object in Node's key order.
+  if (bi.member === "getCipherInfo") {
+    if (args.length < 1 || args.length > 2) {
+      lowerer.noLowering(`crypto.getCipherInfo with ${args.length} arguments`, expr);
+    }
+    const info: IrExpr = {
+      kind: "libCall",
+      fn: "crypto.getCipherInfo",
+      args: [dynArg(lowerer, args[0], loc), dynArg(lowerer, args[1], loc)],
+      type: DYN,
+      loc,
+    };
+    return lowerer.coerceToExpected(info, lowerer.mapTypeOf(lowerer.typeOf(expr)) ?? DYN);
+  }
   const LISTS: Record<string, readonly string[] | undefined> = {
     getCiphers: CRYPTO_CIPHERS,
     getHashes: CRYPTO_HASHES,

@@ -12987,3 +12987,776 @@ ScrDyn *scr_crypto_get_random_values_dyn(ScrDyn *value) {
   scr_bytes_release(filled);
   return scr_dyn_retain(value);
 }
+
+/* ── crypto.getCipherInfo ──────────────────────────────────────────────
+ * OpenSSL's cipher table as Node 24's crypto.getCipherInfo reports it:
+ * one row per cipher (canonical name, the nid it reports or 0, mode,
+ * block size, IV length and key length, 0 for a field Node leaves out,
+ * and whether it is a legacy cipher, whose length options always fail),
+ * the nids that look a row up, and every name that does, lower-cased and
+ * sorted. Generated from Node 24's answers. */
+typedef struct {
+  const char *name;
+  int nid;
+  unsigned char mode;
+  unsigned char block_size;
+  unsigned char iv_length;
+  unsigned char key_length;
+  bool legacy;
+} ScrCipherInfoRow;
+
+typedef struct {
+  int nid;
+  unsigned char row;
+} ScrCipherInfoNid;
+
+typedef struct {
+  const char *name;
+  unsigned char row;
+} ScrCipherInfoName;
+
+static const char *const scr_cipher_info_modes[] = {"cbc", "ccm", "cfb", "ctr", "ecb", "gcm", "gcm-siv", "ocb", "ofb", "siv", "stream", "wrap", "xts"};
+enum {
+  SCR_CIPHER_MODE_CBC,
+  SCR_CIPHER_MODE_CCM,
+  SCR_CIPHER_MODE_CFB,
+  SCR_CIPHER_MODE_CTR,
+  SCR_CIPHER_MODE_ECB,
+  SCR_CIPHER_MODE_GCM,
+  SCR_CIPHER_MODE_GCM_SIV,
+  SCR_CIPHER_MODE_OCB,
+  SCR_CIPHER_MODE_OFB,
+  SCR_CIPHER_MODE_SIV,
+  SCR_CIPHER_MODE_STREAM,
+  SCR_CIPHER_MODE_WRAP,
+  SCR_CIPHER_MODE_XTS,
+};
+
+static const ScrCipherInfoRow scr_cipher_info_rows[] = {
+  {"aes-128-cbc", 419, SCR_CIPHER_MODE_CBC, 16, 16, 16, false},
+  {"id-aes128-ccm", 896, SCR_CIPHER_MODE_CCM, 1, 12, 16, false},
+  {"aes-128-cfb", 421, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"aes-128-cfb1", 650, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"aes-128-cfb8", 653, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"aes-128-ctr", 904, SCR_CIPHER_MODE_CTR, 1, 16, 16, false},
+  {"aes-128-ecb", 418, SCR_CIPHER_MODE_ECB, 16, 0, 16, false},
+  {"id-aes128-gcm", 895, SCR_CIPHER_MODE_GCM, 1, 12, 16, false},
+  {"aes-128-ocb", 958, SCR_CIPHER_MODE_OCB, 16, 12, 16, false},
+  {"aes-128-ofb", 420, SCR_CIPHER_MODE_OFB, 1, 16, 16, false},
+  {"aes-128-xts", 913, SCR_CIPHER_MODE_XTS, 1, 16, 32, false},
+  {"aes-192-cbc", 423, SCR_CIPHER_MODE_CBC, 16, 16, 24, false},
+  {"id-aes192-ccm", 899, SCR_CIPHER_MODE_CCM, 1, 12, 24, false},
+  {"aes-192-cfb", 425, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"aes-192-cfb1", 651, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"aes-192-cfb8", 654, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"aes-192-ctr", 905, SCR_CIPHER_MODE_CTR, 1, 16, 24, false},
+  {"aes-192-ecb", 422, SCR_CIPHER_MODE_ECB, 16, 0, 24, false},
+  {"id-aes192-gcm", 898, SCR_CIPHER_MODE_GCM, 1, 12, 24, false},
+  {"aes-192-ocb", 959, SCR_CIPHER_MODE_OCB, 16, 12, 24, false},
+  {"aes-192-ofb", 424, SCR_CIPHER_MODE_OFB, 1, 16, 24, false},
+  {"aes-256-cbc", 427, SCR_CIPHER_MODE_CBC, 16, 16, 32, false},
+  {"id-aes256-ccm", 902, SCR_CIPHER_MODE_CCM, 1, 12, 32, false},
+  {"aes-256-cfb", 429, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"aes-256-cfb1", 652, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"aes-256-cfb8", 655, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"aes-256-ctr", 906, SCR_CIPHER_MODE_CTR, 1, 16, 32, false},
+  {"aes-256-ecb", 426, SCR_CIPHER_MODE_ECB, 16, 0, 32, false},
+  {"id-aes256-gcm", 901, SCR_CIPHER_MODE_GCM, 1, 12, 32, false},
+  {"aes-256-ocb", 960, SCR_CIPHER_MODE_OCB, 16, 12, 32, false},
+  {"aes-256-ofb", 428, SCR_CIPHER_MODE_OFB, 1, 16, 32, false},
+  {"aes-256-xts", 914, SCR_CIPHER_MODE_XTS, 1, 16, 64, false},
+  {"id-aes128-wrap", 788, SCR_CIPHER_MODE_WRAP, 8, 8, 16, false},
+  {"id-aes192-wrap", 789, SCR_CIPHER_MODE_WRAP, 8, 8, 24, false},
+  {"id-aes256-wrap", 790, SCR_CIPHER_MODE_WRAP, 8, 8, 32, false},
+  {"aria-128-cbc", 1066, SCR_CIPHER_MODE_CBC, 16, 16, 16, false},
+  {"aria-128-ccm", 1120, SCR_CIPHER_MODE_CCM, 1, 12, 16, false},
+  {"aria-128-cfb", 1067, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"aria-128-cfb1", 1080, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"aria-128-cfb8", 1083, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"aria-128-ctr", 1069, SCR_CIPHER_MODE_CTR, 1, 16, 16, false},
+  {"aria-128-ecb", 1065, SCR_CIPHER_MODE_ECB, 16, 0, 16, false},
+  {"aria-128-gcm", 1123, SCR_CIPHER_MODE_GCM, 1, 12, 16, false},
+  {"aria-128-ofb", 1068, SCR_CIPHER_MODE_OFB, 1, 16, 16, false},
+  {"aria-192-cbc", 1071, SCR_CIPHER_MODE_CBC, 16, 16, 24, false},
+  {"aria-192-ccm", 1121, SCR_CIPHER_MODE_CCM, 1, 12, 24, false},
+  {"aria-192-cfb", 1072, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"aria-192-cfb1", 1081, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"aria-192-cfb8", 1084, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"aria-192-ctr", 1074, SCR_CIPHER_MODE_CTR, 1, 16, 24, false},
+  {"aria-192-ecb", 1070, SCR_CIPHER_MODE_ECB, 16, 0, 24, false},
+  {"aria-192-gcm", 1124, SCR_CIPHER_MODE_GCM, 1, 12, 24, false},
+  {"aria-192-ofb", 1073, SCR_CIPHER_MODE_OFB, 1, 16, 24, false},
+  {"aria-256-cbc", 1076, SCR_CIPHER_MODE_CBC, 16, 16, 32, false},
+  {"aria-256-ccm", 1122, SCR_CIPHER_MODE_CCM, 1, 12, 32, false},
+  {"aria-256-cfb", 1077, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"aria-256-cfb1", 1082, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"aria-256-cfb8", 1085, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"aria-256-ctr", 1079, SCR_CIPHER_MODE_CTR, 1, 16, 32, false},
+  {"aria-256-ecb", 1075, SCR_CIPHER_MODE_ECB, 16, 0, 32, false},
+  {"aria-256-gcm", 1125, SCR_CIPHER_MODE_GCM, 1, 12, 32, false},
+  {"aria-256-ofb", 1078, SCR_CIPHER_MODE_OFB, 1, 16, 32, false},
+  {"bf-cbc", 91, SCR_CIPHER_MODE_CBC, 8, 8, 16, true},
+  {"bf-cfb", 93, SCR_CIPHER_MODE_CFB, 1, 8, 16, true},
+  {"bf-ecb", 92, SCR_CIPHER_MODE_ECB, 8, 0, 16, true},
+  {"bf-ofb", 94, SCR_CIPHER_MODE_OFB, 1, 8, 16, true},
+  {"camellia-128-cbc", 751, SCR_CIPHER_MODE_CBC, 16, 16, 16, false},
+  {"camellia-128-cfb", 757, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"camellia-128-cfb1", 760, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"camellia-128-cfb8", 763, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"camellia-128-ctr", 963, SCR_CIPHER_MODE_CTR, 1, 16, 16, false},
+  {"camellia-128-ecb", 754, SCR_CIPHER_MODE_ECB, 16, 0, 16, false},
+  {"camellia-128-ofb", 766, SCR_CIPHER_MODE_OFB, 1, 16, 16, false},
+  {"camellia-192-cbc", 752, SCR_CIPHER_MODE_CBC, 16, 16, 24, false},
+  {"camellia-192-cfb", 758, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"camellia-192-cfb1", 761, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"camellia-192-cfb8", 764, SCR_CIPHER_MODE_CFB, 1, 16, 24, false},
+  {"camellia-192-ctr", 967, SCR_CIPHER_MODE_CTR, 1, 16, 24, false},
+  {"camellia-192-ecb", 755, SCR_CIPHER_MODE_ECB, 16, 0, 24, false},
+  {"camellia-192-ofb", 767, SCR_CIPHER_MODE_OFB, 1, 16, 24, false},
+  {"camellia-256-cbc", 753, SCR_CIPHER_MODE_CBC, 16, 16, 32, false},
+  {"camellia-256-cfb", 759, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"camellia-256-cfb1", 762, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"camellia-256-cfb8", 765, SCR_CIPHER_MODE_CFB, 1, 16, 32, false},
+  {"camellia-256-ctr", 971, SCR_CIPHER_MODE_CTR, 1, 16, 32, false},
+  {"camellia-256-ecb", 756, SCR_CIPHER_MODE_ECB, 16, 0, 32, false},
+  {"camellia-256-ofb", 768, SCR_CIPHER_MODE_OFB, 1, 16, 32, false},
+  {"cast5-cbc", 108, SCR_CIPHER_MODE_CBC, 8, 8, 16, true},
+  {"cast5-cfb", 110, SCR_CIPHER_MODE_CFB, 1, 8, 16, true},
+  {"cast5-ecb", 109, SCR_CIPHER_MODE_ECB, 8, 0, 16, true},
+  {"cast5-ofb", 111, SCR_CIPHER_MODE_OFB, 1, 8, 16, true},
+  {"chacha20", 1019, SCR_CIPHER_MODE_STREAM, 0, 16, 32, false},
+  {"chacha20-poly1305", 1018, SCR_CIPHER_MODE_STREAM, 0, 12, 32, false},
+  {"des-cbc", 31, SCR_CIPHER_MODE_CBC, 8, 8, 8, true},
+  {"des-cfb", 30, SCR_CIPHER_MODE_CFB, 1, 8, 8, true},
+  {"des-cfb1", 656, SCR_CIPHER_MODE_CFB, 1, 8, 8, true},
+  {"des-cfb8", 657, SCR_CIPHER_MODE_CFB, 1, 8, 8, true},
+  {"des-ecb", 29, SCR_CIPHER_MODE_ECB, 8, 0, 8, true},
+  {"des-ede", 32, SCR_CIPHER_MODE_ECB, 8, 0, 16, false},
+  {"des-ede-cbc", 43, SCR_CIPHER_MODE_CBC, 8, 8, 16, false},
+  {"des-ede-cfb", 60, SCR_CIPHER_MODE_CFB, 1, 8, 16, false},
+  {"des-ede-ofb", 62, SCR_CIPHER_MODE_OFB, 1, 8, 16, false},
+  {"des-ede3", 33, SCR_CIPHER_MODE_ECB, 8, 0, 24, false},
+  {"des-ede3-cbc", 44, SCR_CIPHER_MODE_CBC, 8, 8, 24, false},
+  {"des-ede3-cfb", 61, SCR_CIPHER_MODE_CFB, 1, 8, 24, false},
+  {"des-ede3-cfb1", 658, SCR_CIPHER_MODE_CFB, 1, 8, 24, false},
+  {"des-ede3-cfb8", 659, SCR_CIPHER_MODE_CFB, 1, 8, 24, false},
+  {"des-ede3-ofb", 63, SCR_CIPHER_MODE_OFB, 1, 8, 24, false},
+  {"des-ofb", 45, SCR_CIPHER_MODE_OFB, 1, 8, 8, true},
+  {"id-smime-alg-cms3deswrap", 246, SCR_CIPHER_MODE_WRAP, 8, 0, 24, false},
+  {"desx-cbc", 80, SCR_CIPHER_MODE_CBC, 8, 8, 24, true},
+  {"id-aes128-wrap-pad", 897, SCR_CIPHER_MODE_WRAP, 8, 4, 16, false},
+  {"id-aes192-wrap-pad", 900, SCR_CIPHER_MODE_WRAP, 8, 4, 24, false},
+  {"id-aes256-wrap-pad", 903, SCR_CIPHER_MODE_WRAP, 8, 4, 32, false},
+  {"rc2-cbc", 37, SCR_CIPHER_MODE_CBC, 8, 8, 16, true},
+  {"rc2-40-cbc", 98, SCR_CIPHER_MODE_CBC, 8, 8, 5, true},
+  {"rc2-64-cbc", 166, SCR_CIPHER_MODE_CBC, 8, 8, 8, true},
+  {"rc2-cfb", 39, SCR_CIPHER_MODE_CFB, 1, 8, 16, true},
+  {"rc2-ecb", 38, SCR_CIPHER_MODE_ECB, 8, 0, 16, true},
+  {"rc2-ofb", 40, SCR_CIPHER_MODE_OFB, 1, 8, 16, true},
+  {"rc4", 5, SCR_CIPHER_MODE_STREAM, 0, 0, 16, true},
+  {"rc4-40", 97, SCR_CIPHER_MODE_STREAM, 0, 0, 5, true},
+  {"rc4-hmac-md5", 915, SCR_CIPHER_MODE_STREAM, 0, 0, 16, true},
+  {"seed-cbc", 777, SCR_CIPHER_MODE_CBC, 16, 16, 16, true},
+  {"seed-cfb", 779, SCR_CIPHER_MODE_CFB, 1, 16, 16, true},
+  {"seed-ecb", 776, SCR_CIPHER_MODE_ECB, 16, 0, 16, true},
+  {"seed-ofb", 778, SCR_CIPHER_MODE_OFB, 1, 16, 16, true},
+  {"sm4-cbc", 1134, SCR_CIPHER_MODE_CBC, 16, 16, 16, false},
+  {"sm4-cfb", 1137, SCR_CIPHER_MODE_CFB, 1, 16, 16, false},
+  {"sm4-ctr", 1139, SCR_CIPHER_MODE_CTR, 1, 16, 16, false},
+  {"sm4-ecb", 1133, SCR_CIPHER_MODE_ECB, 16, 0, 16, false},
+  {"sm4-ofb", 1135, SCR_CIPHER_MODE_OFB, 1, 16, 16, false},
+  {"aes-128-cbc-cts", 0, SCR_CIPHER_MODE_CBC, 16, 16, 16, false},
+  {"aes-192-cbc-cts", 0, SCR_CIPHER_MODE_CBC, 16, 16, 24, false},
+  {"aes-256-cbc-cts", 0, SCR_CIPHER_MODE_CBC, 16, 16, 32, false},
+  {"aes-128-siv", 0, SCR_CIPHER_MODE_SIV, 1, 0, 32, false},
+  {"aes-192-siv", 0, SCR_CIPHER_MODE_SIV, 1, 0, 48, false},
+  {"aes-256-siv", 0, SCR_CIPHER_MODE_SIV, 1, 0, 64, false},
+  {"aes-256-wrap-inv", 0, SCR_CIPHER_MODE_WRAP, 8, 8, 32, false},
+  {"aes-192-wrap-inv", 0, SCR_CIPHER_MODE_WRAP, 8, 8, 24, false},
+  {"aes-128-wrap-inv", 0, SCR_CIPHER_MODE_WRAP, 8, 8, 16, false},
+  {"aes-256-wrap-pad-inv", 0, SCR_CIPHER_MODE_WRAP, 8, 4, 32, false},
+  {"aes-192-wrap-pad-inv", 0, SCR_CIPHER_MODE_WRAP, 8, 4, 24, false},
+  {"aes-128-wrap-pad-inv", 0, SCR_CIPHER_MODE_WRAP, 8, 4, 16, false},
+  {"camellia-128-cbc-cts", 0, SCR_CIPHER_MODE_CBC, 16, 16, 16, false},
+  {"camellia-192-cbc-cts", 0, SCR_CIPHER_MODE_CBC, 16, 16, 24, false},
+  {"camellia-256-cbc-cts", 0, SCR_CIPHER_MODE_CBC, 16, 16, 32, false},
+  {"aes-128-gcm-siv", 0, SCR_CIPHER_MODE_GCM_SIV, 1, 12, 16, false},
+  {"aes-192-gcm-siv", 0, SCR_CIPHER_MODE_GCM_SIV, 1, 12, 24, false},
+  {"aes-256-gcm-siv", 0, SCR_CIPHER_MODE_GCM_SIV, 1, 12, 32, false},
+  {"sm4-ccm", 0, SCR_CIPHER_MODE_CCM, 1, 12, 16, false},
+  {"sm4-gcm", 0, SCR_CIPHER_MODE_GCM, 1, 12, 16, false},
+  {"sm4-xts", 0, SCR_CIPHER_MODE_XTS, 1, 16, 32, false},
+  {"idea-cbc", 34, SCR_CIPHER_MODE_CBC, 8, 8, 16, true},
+  {"idea-cfb", 35, SCR_CIPHER_MODE_CFB, 1, 8, 16, true},
+  {"idea-ecb", 36, SCR_CIPHER_MODE_ECB, 8, 0, 16, true},
+  {"idea-ofb", 46, SCR_CIPHER_MODE_OFB, 1, 8, 16, true},
+};
+
+static const ScrCipherInfoNid scr_cipher_info_nids[] = {
+  {5, 120},
+  {29, 97},
+  {30, 94},
+  {31, 93},
+  {32, 98},
+  {33, 102},
+  {34, 153},
+  {35, 154},
+  {36, 155},
+  {37, 114},
+  {38, 118},
+  {39, 117},
+  {40, 119},
+  {43, 99},
+  {44, 103},
+  {45, 108},
+  {46, 156},
+  {60, 100},
+  {61, 104},
+  {62, 101},
+  {63, 107},
+  {80, 110},
+  {91, 62},
+  {92, 64},
+  {93, 63},
+  {94, 65},
+  {97, 121},
+  {98, 115},
+  {108, 87},
+  {109, 89},
+  {110, 88},
+  {111, 90},
+  {166, 116},
+  {246, 109},
+  {418, 6},
+  {419, 0},
+  {420, 9},
+  {421, 2},
+  {422, 17},
+  {423, 11},
+  {424, 20},
+  {425, 13},
+  {426, 27},
+  {427, 21},
+  {428, 30},
+  {429, 23},
+  {650, 3},
+  {651, 14},
+  {652, 24},
+  {653, 4},
+  {654, 15},
+  {655, 25},
+  {656, 95},
+  {657, 96},
+  {658, 105},
+  {659, 106},
+  {751, 66},
+  {752, 73},
+  {753, 80},
+  {754, 71},
+  {755, 78},
+  {756, 85},
+  {757, 67},
+  {758, 74},
+  {759, 81},
+  {760, 68},
+  {761, 75},
+  {762, 82},
+  {763, 69},
+  {764, 76},
+  {765, 83},
+  {766, 72},
+  {767, 79},
+  {768, 86},
+  {776, 125},
+  {777, 123},
+  {778, 126},
+  {779, 124},
+  {788, 32},
+  {789, 33},
+  {790, 34},
+  {895, 7},
+  {896, 1},
+  {897, 111},
+  {898, 18},
+  {899, 12},
+  {900, 112},
+  {901, 28},
+  {902, 22},
+  {903, 113},
+  {904, 5},
+  {905, 16},
+  {906, 26},
+  {913, 10},
+  {914, 31},
+  {915, 122},
+  {958, 8},
+  {959, 19},
+  {960, 29},
+  {963, 70},
+  {967, 77},
+  {971, 84},
+  {1018, 92},
+  {1019, 91},
+  {1065, 41},
+  {1066, 35},
+  {1067, 37},
+  {1068, 43},
+  {1069, 40},
+  {1070, 50},
+  {1071, 44},
+  {1072, 46},
+  {1073, 52},
+  {1074, 49},
+  {1075, 59},
+  {1076, 53},
+  {1077, 55},
+  {1078, 61},
+  {1079, 58},
+  {1080, 38},
+  {1081, 47},
+  {1082, 56},
+  {1083, 39},
+  {1084, 48},
+  {1085, 57},
+  {1120, 36},
+  {1121, 45},
+  {1122, 54},
+  {1123, 42},
+  {1124, 51},
+  {1125, 60},
+  {1133, 130},
+  {1134, 127},
+  {1135, 131},
+  {1137, 128},
+  {1139, 129},
+  {1198, 135},
+  {1199, 136},
+  {1200, 137},
+  {1248, 151},
+  {1249, 150},
+  {1290, 152},
+};
+
+static const ScrCipherInfoName scr_cipher_info_names[] = {
+  {"0.3.4401.5.3.1.9.1", 71},
+  {"0.3.4401.5.3.1.9.21", 78},
+  {"0.3.4401.5.3.1.9.23", 79},
+  {"0.3.4401.5.3.1.9.24", 74},
+  {"0.3.4401.5.3.1.9.29", 77},
+  {"0.3.4401.5.3.1.9.3", 72},
+  {"0.3.4401.5.3.1.9.4", 67},
+  {"0.3.4401.5.3.1.9.41", 85},
+  {"0.3.4401.5.3.1.9.43", 86},
+  {"0.3.4401.5.3.1.9.44", 81},
+  {"0.3.4401.5.3.1.9.49", 84},
+  {"0.3.4401.5.3.1.9.9", 70},
+  {"1.2.156.10197.1.104.1", 130},
+  {"1.2.156.10197.1.104.2", 127},
+  {"1.2.156.10197.1.104.3", 131},
+  {"1.2.156.10197.1.104.4", 128},
+  {"1.2.156.10197.1.104.7", 129},
+  {"1.2.392.200011.61.1.1.1.2", 66},
+  {"1.2.392.200011.61.1.1.1.3", 73},
+  {"1.2.392.200011.61.1.1.1.4", 80},
+  {"1.2.410.200046.1.1.1", 41},
+  {"1.2.410.200046.1.1.10", 49},
+  {"1.2.410.200046.1.1.11", 59},
+  {"1.2.410.200046.1.1.12", 53},
+  {"1.2.410.200046.1.1.13", 55},
+  {"1.2.410.200046.1.1.14", 61},
+  {"1.2.410.200046.1.1.15", 58},
+  {"1.2.410.200046.1.1.2", 35},
+  {"1.2.410.200046.1.1.3", 37},
+  {"1.2.410.200046.1.1.34", 42},
+  {"1.2.410.200046.1.1.35", 51},
+  {"1.2.410.200046.1.1.36", 60},
+  {"1.2.410.200046.1.1.37", 36},
+  {"1.2.410.200046.1.1.38", 45},
+  {"1.2.410.200046.1.1.39", 54},
+  {"1.2.410.200046.1.1.4", 43},
+  {"1.2.410.200046.1.1.5", 40},
+  {"1.2.410.200046.1.1.6", 50},
+  {"1.2.410.200046.1.1.7", 44},
+  {"1.2.410.200046.1.1.8", 46},
+  {"1.2.410.200046.1.1.9", 52},
+  {"1.2.840.113549.1.9.16.3.6", 109},
+  {"1.2.840.113549.3.7", 103},
+  {"1.3.111.2.1619.0.1.1", 10},
+  {"1.3.111.2.1619.0.1.2", 31},
+  {"1.3.14.3.2.17", 98},
+  {"2.16.840.1.101.3.4.1.1", 6},
+  {"2.16.840.1.101.3.4.1.2", 0},
+  {"2.16.840.1.101.3.4.1.21", 17},
+  {"2.16.840.1.101.3.4.1.22", 11},
+  {"2.16.840.1.101.3.4.1.23", 20},
+  {"2.16.840.1.101.3.4.1.24", 13},
+  {"2.16.840.1.101.3.4.1.25", 33},
+  {"2.16.840.1.101.3.4.1.26", 18},
+  {"2.16.840.1.101.3.4.1.27", 12},
+  {"2.16.840.1.101.3.4.1.28", 112},
+  {"2.16.840.1.101.3.4.1.3", 9},
+  {"2.16.840.1.101.3.4.1.4", 2},
+  {"2.16.840.1.101.3.4.1.41", 27},
+  {"2.16.840.1.101.3.4.1.42", 21},
+  {"2.16.840.1.101.3.4.1.43", 30},
+  {"2.16.840.1.101.3.4.1.44", 23},
+  {"2.16.840.1.101.3.4.1.45", 34},
+  {"2.16.840.1.101.3.4.1.46", 28},
+  {"2.16.840.1.101.3.4.1.47", 22},
+  {"2.16.840.1.101.3.4.1.48", 113},
+  {"2.16.840.1.101.3.4.1.5", 32},
+  {"2.16.840.1.101.3.4.1.6", 7},
+  {"2.16.840.1.101.3.4.1.7", 1},
+  {"2.16.840.1.101.3.4.1.8", 111},
+  {"aes-128-cbc", 0},
+  {"aes-128-cbc-cts", 132},
+  {"aes-128-ccm", 1},
+  {"aes-128-cfb", 2},
+  {"aes-128-cfb1", 3},
+  {"aes-128-cfb8", 4},
+  {"aes-128-ctr", 5},
+  {"aes-128-ecb", 6},
+  {"aes-128-gcm", 7},
+  {"aes-128-gcm-siv", 147},
+  {"aes-128-ocb", 8},
+  {"aes-128-ofb", 9},
+  {"aes-128-siv", 135},
+  {"aes-128-wrap", 32},
+  {"aes-128-wrap-inv", 140},
+  {"aes-128-wrap-pad", 111},
+  {"aes-128-wrap-pad-inv", 143},
+  {"aes-128-xts", 10},
+  {"aes-192-cbc", 11},
+  {"aes-192-cbc-cts", 133},
+  {"aes-192-ccm", 12},
+  {"aes-192-cfb", 13},
+  {"aes-192-cfb1", 14},
+  {"aes-192-cfb8", 15},
+  {"aes-192-ctr", 16},
+  {"aes-192-ecb", 17},
+  {"aes-192-gcm", 18},
+  {"aes-192-gcm-siv", 148},
+  {"aes-192-ocb", 19},
+  {"aes-192-ofb", 20},
+  {"aes-192-siv", 136},
+  {"aes-192-wrap", 33},
+  {"aes-192-wrap-inv", 139},
+  {"aes-192-wrap-pad", 112},
+  {"aes-192-wrap-pad-inv", 142},
+  {"aes-256-cbc", 21},
+  {"aes-256-cbc-cts", 134},
+  {"aes-256-ccm", 22},
+  {"aes-256-cfb", 23},
+  {"aes-256-cfb1", 24},
+  {"aes-256-cfb8", 25},
+  {"aes-256-ctr", 26},
+  {"aes-256-ecb", 27},
+  {"aes-256-gcm", 28},
+  {"aes-256-gcm-siv", 149},
+  {"aes-256-ocb", 29},
+  {"aes-256-ofb", 30},
+  {"aes-256-siv", 137},
+  {"aes-256-wrap", 34},
+  {"aes-256-wrap-inv", 138},
+  {"aes-256-wrap-pad", 113},
+  {"aes-256-wrap-pad-inv", 141},
+  {"aes-256-xts", 31},
+  {"aes128", 0},
+  {"aes128-wrap", 32},
+  {"aes128-wrap-inv", 140},
+  {"aes128-wrap-pad", 111},
+  {"aes128-wrap-pad-inv", 143},
+  {"aes192", 11},
+  {"aes192-wrap", 33},
+  {"aes192-wrap-inv", 139},
+  {"aes192-wrap-pad", 112},
+  {"aes192-wrap-pad-inv", 142},
+  {"aes256", 21},
+  {"aes256-wrap", 34},
+  {"aes256-wrap-inv", 138},
+  {"aes256-wrap-pad", 113},
+  {"aes256-wrap-pad-inv", 141},
+  {"aria-128-cbc", 35},
+  {"aria-128-ccm", 36},
+  {"aria-128-cfb", 37},
+  {"aria-128-cfb1", 38},
+  {"aria-128-cfb8", 39},
+  {"aria-128-ctr", 40},
+  {"aria-128-ecb", 41},
+  {"aria-128-gcm", 42},
+  {"aria-128-ofb", 43},
+  {"aria-192-cbc", 44},
+  {"aria-192-ccm", 45},
+  {"aria-192-cfb", 46},
+  {"aria-192-cfb1", 47},
+  {"aria-192-cfb8", 48},
+  {"aria-192-ctr", 49},
+  {"aria-192-ecb", 50},
+  {"aria-192-gcm", 51},
+  {"aria-192-ofb", 52},
+  {"aria-256-cbc", 53},
+  {"aria-256-ccm", 54},
+  {"aria-256-cfb", 55},
+  {"aria-256-cfb1", 56},
+  {"aria-256-cfb8", 57},
+  {"aria-256-ctr", 58},
+  {"aria-256-ecb", 59},
+  {"aria-256-gcm", 60},
+  {"aria-256-ofb", 61},
+  {"aria128", 35},
+  {"aria192", 44},
+  {"aria256", 53},
+  {"bf", 62},
+  {"bf-cbc", 62},
+  {"bf-cfb", 63},
+  {"bf-ecb", 64},
+  {"bf-ofb", 65},
+  {"blowfish", 62},
+  {"camellia-128-cbc", 66},
+  {"camellia-128-cbc-cts", 144},
+  {"camellia-128-cfb", 67},
+  {"camellia-128-cfb1", 68},
+  {"camellia-128-cfb8", 69},
+  {"camellia-128-ctr", 70},
+  {"camellia-128-ecb", 71},
+  {"camellia-128-ofb", 72},
+  {"camellia-192-cbc", 73},
+  {"camellia-192-cbc-cts", 145},
+  {"camellia-192-cfb", 74},
+  {"camellia-192-cfb1", 75},
+  {"camellia-192-cfb8", 76},
+  {"camellia-192-ctr", 77},
+  {"camellia-192-ecb", 78},
+  {"camellia-192-ofb", 79},
+  {"camellia-256-cbc", 80},
+  {"camellia-256-cbc-cts", 146},
+  {"camellia-256-cfb", 81},
+  {"camellia-256-cfb1", 82},
+  {"camellia-256-cfb8", 83},
+  {"camellia-256-ctr", 84},
+  {"camellia-256-ecb", 85},
+  {"camellia-256-ofb", 86},
+  {"camellia128", 66},
+  {"camellia192", 73},
+  {"camellia256", 80},
+  {"cast", 87},
+  {"cast-cbc", 87},
+  {"cast5-cbc", 87},
+  {"cast5-cfb", 88},
+  {"cast5-ecb", 89},
+  {"cast5-ofb", 90},
+  {"chacha20", 91},
+  {"chacha20-poly1305", 92},
+  {"des", 93},
+  {"des-cbc", 93},
+  {"des-cfb", 94},
+  {"des-cfb1", 95},
+  {"des-cfb8", 96},
+  {"des-ecb", 97},
+  {"des-ede", 98},
+  {"des-ede-cbc", 99},
+  {"des-ede-cfb", 100},
+  {"des-ede-ecb", 98},
+  {"des-ede-ofb", 101},
+  {"des-ede3", 102},
+  {"des-ede3-cbc", 103},
+  {"des-ede3-cfb", 104},
+  {"des-ede3-cfb1", 105},
+  {"des-ede3-cfb8", 106},
+  {"des-ede3-ecb", 102},
+  {"des-ede3-ofb", 107},
+  {"des-ofb", 108},
+  {"des3", 103},
+  {"des3-wrap", 109},
+  {"desx", 110},
+  {"desx-cbc", 110},
+  {"id-aes128-ccm", 1},
+  {"id-aes128-gcm", 7},
+  {"id-aes128-wrap", 32},
+  {"id-aes128-wrap-pad", 111},
+  {"id-aes192-ccm", 12},
+  {"id-aes192-gcm", 18},
+  {"id-aes192-wrap", 33},
+  {"id-aes192-wrap-pad", 112},
+  {"id-aes256-ccm", 22},
+  {"id-aes256-gcm", 28},
+  {"id-aes256-wrap", 34},
+  {"id-aes256-wrap-pad", 113},
+  {"id-smime-alg-cms3deswrap", 109},
+  {"idea", 153},
+  {"rc2", 114},
+  {"rc2-128", 114},
+  {"rc2-40", 115},
+  {"rc2-40-cbc", 115},
+  {"rc2-64", 116},
+  {"rc2-64-cbc", 116},
+  {"rc2-cbc", 114},
+  {"rc2-cfb", 117},
+  {"rc2-ecb", 118},
+  {"rc2-ofb", 119},
+  {"rc4", 120},
+  {"rc4-40", 121},
+  {"rc4-hmac-md5", 122},
+  {"seed", 123},
+  {"seed-cbc", 123},
+  {"seed-cfb", 124},
+  {"seed-ecb", 125},
+  {"seed-ofb", 126},
+  {"sm4", 127},
+  {"sm4-cbc", 127},
+  {"sm4-ccm", 150},
+  {"sm4-cfb", 128},
+  {"sm4-cfb128", 128},
+  {"sm4-ctr", 129},
+  {"sm4-ecb", 130},
+  {"sm4-gcm", 151},
+  {"sm4-ofb", 131},
+  {"sm4-ofb128", 131},
+  {"sm4-xts", 152},
+};
+
+/* validateInt32(value, name): Node's ERR_INVALID_ARG_TYPE for a
+ * non-number and ERR_OUT_OF_RANGE for a non-integer or a value outside
+ * int32. False with the exception pending. */
+static bool scr_cipher_info_int32(const ScrDyn *value, const char *name, bool property) {
+  if (value->kind != SCR_DYN_NUM) {
+    if (property) scr_dyn_prop_type_fail(name, "of type number", value);
+    else scr_dyn_arg_type_fail(name, "of type number", value);
+    return false;
+  }
+  double n = value->v.num;
+  char received[48], message[192];
+  if (!(isfinite(n) && trunc(n) == n)) {
+    scr_num_received(n, received);
+    int length = snprintf(message, sizeof message,
+                          "The value of \"%s\" is out of range. It must be an integer. Received %s", name, received);
+    scr_throw_error_msg_code(SCR_ERR_RANGE, message, (size_t)length, "ERR_OUT_OF_RANGE");
+    return false;
+  }
+  if (n < -2147483648.0 || n > 2147483647.0) {
+    scr_num_received(n, received);
+    int length = snprintf(message, sizeof message,
+                          "The value of \"%s\" is out of range. It must be >= -2147483648 && <= 2147483647. Received %s",
+                          name, received);
+    scr_throw_error_msg_code(SCR_ERR_RANGE, message, (size_t)length, "ERR_OUT_OF_RANGE");
+    return false;
+  }
+  return true;
+}
+
+/* The row a cipher name looks up: ASCII case-insensitive, up to an
+ * embedded NUL, as OpenSSL's C-string lookup reads it. -1 when none. */
+static int scr_cipher_info_by_name(const ScrStr *name) {
+  size_t length = 0;
+  while (length < name->len && name->data[length] != '\0') length++;
+  char lower[64];
+  if (length == 0 || length >= sizeof lower) return -1;
+  for (size_t i = 0; i < length; i++) {
+    char c = name->data[i];
+    lower[i] = c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+  }
+  lower[length] = '\0';
+  size_t low = 0, high = sizeof scr_cipher_info_names / sizeof scr_cipher_info_names[0];
+  while (low < high) {
+    size_t mid = (low + high) / 2;
+    int order = strcmp(scr_cipher_info_names[mid].name, lower);
+    if (order == 0) return scr_cipher_info_names[mid].row;
+    if (order < 0) low = mid + 1;
+    else high = mid;
+  }
+  return -1;
+}
+
+static int scr_cipher_info_by_nid(int nid) {
+  for (size_t i = 0; i < sizeof scr_cipher_info_nids / sizeof scr_cipher_info_nids[0]; i++)
+    if (scr_cipher_info_nids[i].nid == nid) return scr_cipher_info_nids[i].row;
+  return -1;
+}
+
+/* options[key] (+1; NULL with the exception pending). Getters run, as in
+ * Node; a typed view reads through its materialized object. */
+static ScrDyn *scr_cipher_info_option(const ScrDyn *options, const char *key, size_t key_len) {
+  if (options->kind == SCR_DYN_TYPED_REF) {
+    ScrDyn *view = scr_dyn_typed_ref_materialize(options);
+    if (!view) return NULL;
+    ScrDyn *value = scr_dyn_obj_read(view, key, key_len);
+    scr_dyn_release(view);
+    return value;
+  }
+  return scr_dyn_obj_read(options, key, key_len);
+}
+
+/* crypto.getCipherInfo(nameOrNid[, options]): Node's argument checks, then
+ * the cipher's { mode, name, nid, blockSize, ivLength, keyLength } in
+ * Node's key order, or undefined when no cipher matches or the cipher
+ * rejects options.keyLength or options.ivLength. A key length must be the
+ * cipher's own; an IV length must be 7 to 13 for CCM, 1 to 15 for OCB, any
+ * int32 for GCM, and the cipher's own for every other mode. `options` is
+ * undefined when absent. Borrows both; +1, or NULL with the exception
+ * pending. */
+ScrDyn *scr_crypto_get_cipher_info(const ScrDyn *name_or_nid, const ScrDyn *options) {
+  if (name_or_nid->kind != SCR_DYN_STR && name_or_nid->kind != SCR_DYN_NUM) {
+    scr_dyn_arg_type_fail("nameOrNid", "one of type string or number", name_or_nid);
+    return NULL;
+  }
+  if (name_or_nid->kind == SCR_DYN_NUM && !scr_cipher_info_int32(name_or_nid, "nameOrNid", false)) return NULL;
+  ScrDyn *key_length = NULL, *iv_length = NULL;
+  if (options->kind != SCR_DYN_UNDEF) {
+    /* validateObject: an object other than null, an array or a function. */
+    bool object = options->kind != SCR_DYN_NULL && options->kind != SCR_DYN_ARR && options->kind != SCR_DYN_FUNC &&
+                  options->kind != SCR_DYN_STR && options->kind != SCR_DYN_NUM && options->kind != SCR_DYN_BOOL &&
+                  options->kind != SCR_DYN_BIGINT && options->kind != SCR_DYN_SYMBOL &&
+                  !(options->kind == SCR_DYN_TYPED_REF && scr_dyn_ref_is_array(options));
+    if (!object) {
+      scr_dyn_arg_type_fail("options", "of type object", options);
+      return NULL;
+    }
+    key_length = scr_cipher_info_option(options, "keyLength", 9);
+    if (!key_length) return NULL;
+    iv_length = scr_cipher_info_option(options, "ivLength", 8);
+    if (!iv_length) {
+      scr_dyn_release(key_length);
+      return NULL;
+    }
+    bool valid = (key_length->kind == SCR_DYN_UNDEF || scr_cipher_info_int32(key_length, "options.keyLength", true)) &&
+                 (iv_length->kind == SCR_DYN_UNDEF || scr_cipher_info_int32(iv_length, "options.ivLength", true));
+    if (!valid) {
+      scr_dyn_release(key_length);
+      scr_dyn_release(iv_length);
+      return NULL;
+    }
+  }
+  int index = name_or_nid->kind == SCR_DYN_STR ? scr_cipher_info_by_name(name_or_nid->v.str)
+                                                : scr_cipher_info_by_nid((int)name_or_nid->v.num);
+  bool has_key = key_length && key_length->kind != SCR_DYN_UNDEF;
+  bool has_iv = iv_length && iv_length->kind != SCR_DYN_UNDEF;
+  double want_key = has_key ? key_length->v.num : 0, want_iv = has_iv ? iv_length->v.num : 0;
+  scr_dyn_release(key_length);
+  scr_dyn_release(iv_length);
+  if (index < 0) return scr_dyn_retain(scr_dyn_undefined());
+  const ScrCipherInfoRow *row = &scr_cipher_info_rows[index];
+  if (row->legacy && (has_key || has_iv)) return scr_dyn_retain(scr_dyn_undefined());
+  if (has_key && want_key != row->key_length) return scr_dyn_retain(scr_dyn_undefined());
+  double iv = row->iv_length;
+  if (has_iv) {
+    bool fits = row->mode == SCR_CIPHER_MODE_CCM   ? want_iv >= 7 && want_iv <= 13
+                : row->mode == SCR_CIPHER_MODE_OCB ? want_iv >= 1 && want_iv <= 15
+                : row->mode == SCR_CIPHER_MODE_GCM ? true
+                                                   : want_iv == row->iv_length;
+    if (!fits) return scr_dyn_retain(scr_dyn_undefined());
+    iv = want_iv;
+  }
+  ScrDyn *out = scr_dyn_new_obj();
+  const char *mode = scr_cipher_info_modes[row->mode];
+  ScrStr *mode_text = scr_str_new(mode, strlen(mode));
+  scr_dyn_obj_set(out, "mode", 4, scr_dyn_new_str(mode_text));
+  scr_str_release(mode_text);
+  ScrStr *name_text = scr_str_new(row->name, strlen(row->name));
+  scr_dyn_obj_set(out, "name", 4, scr_dyn_new_str(name_text));
+  scr_str_release(name_text);
+  if (row->nid != 0) scr_dyn_obj_set(out, "nid", 3, scr_dyn_new_num(row->nid));
+  if (row->block_size != 0) scr_dyn_obj_set(out, "blockSize", 9, scr_dyn_new_num(row->block_size));
+  if (iv != 0) scr_dyn_obj_set(out, "ivLength", 8, scr_dyn_new_num(iv));
+  scr_dyn_obj_set(out, "keyLength", 9, scr_dyn_new_num(row->key_length));
+  return out;
+}

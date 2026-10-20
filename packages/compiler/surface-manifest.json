@@ -603,14 +603,6 @@
       "status": "static"
     },
     {
-      "id": "node-builtin.crypto.getCipherInfo",
-      "kind": "node-builtin",
-      "name": "crypto.getCipherInfo",
-      "status": "unsupported",
-      "code": "SC2020",
-      "note": "cipher metadata has no lowering — createCipheriv and createDecipheriv support aes-128/192/256 in cbc, ctr, and gcm modes and chacha20-poly1305"
-    },
-    {
       "id": "node-builtin.crypto.getDiffieHellman",
       "kind": "node-builtin",
       "name": "crypto.getDiffieHellman",

@@ -3065,13 +3065,6 @@ export const BUILTIN_MODULE_FENCE_HINTS: Record<
           "can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics",
       ]),
     ),
-    ...Object.fromEntries(
-      ["getCipherInfo"].map((m) => [
-        m,
-        "cipher metadata has no lowering — createCipheriv and createDecipheriv support " +
-          "aes-128/192/256 in cbc, ctr, and gcm modes and chacha20-poly1305",
-      ]),
-    ),
     setFips:
       "a compiled binary has no FIPS provider to enable, and Node itself throws on setFips(true) " +
       "in a non-FIPS build — getFips() answers 0 here",

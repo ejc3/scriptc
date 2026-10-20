@@ -1166,6 +1166,10 @@ export interface TypeMapperCtx {
   isStdlibFile: (sf: ts.SourceFile) => boolean;
 
   isNpmFile: (sf: ts.SourceFile) => boolean;
+  /** Records a field of an interned stdlib shape that the declaration calls
+   * present but Node can leave out, so reads keep its undefined arm (the
+   * Lowerer's runtimeOptionalFields). Absent without a Lowerer. */
+  runtimeOptionalField?: (shapeId: string, field: string) => void;
   /** True for a declaration file explicitly mapped by coverage's
    * --external-types option. These declarations are trusted as structural
    * type descriptions for project-owned values, but their imported runtime
@@ -4055,6 +4059,34 @@ function mapTypeInner(type: ts.Type, ctx: TypeMapperCtx): IrType | null {
         ["root", "dir", "base", "ext", "name"],
       ),
     };
+  }
+  // crypto.CipherInfo (crypto.getCipherInfo()'s result): a stdlib data
+  // interface interned explicitly, the AddressInfo pattern. The mode literal
+  // union widens to string (OpenSSL also answers modes outside the declared
+  // union, such as 'siv'). blockSize and ivLength are the undefined-armed
+  // optional fields Node leaves out for stream ciphers and ECB; nid is
+  // undefined-armed too, since Node also leaves it out for ciphers OpenSSL
+  // gives no nid (aes-128-siv, sm4-gcm). Key order is
+  // Node's own (node_crypto builds mode, name, nid, blockSize, ivLength,
+  // keyLength).
+  if (isStdlibInterface("CipherInfo")) {
+    const optional = withUndefinedArm(F64, ctx.unions);
+    if (!optional) return null;
+    const shapeId = ctx.shapes.intern(
+      [
+        { name: "blockSize", type: optional },
+        { name: "ivLength", type: optional },
+        { name: "keyLength", type: F64 },
+        { name: "mode", type: STRING },
+        { name: "name", type: STRING },
+        { name: "nid", type: optional },
+      ],
+      false,
+      undefined,
+      ["mode", "name", "nid", "blockSize", "ivLength", "keyLength"],
+    );
+    ctx.runtimeOptionalField?.(shapeId, "nid");
+    return { kind: "record", shapeId };
   }
   if (isStdlibInterface("UserInfo")) {
     const args = checker.getTypeArguments(widened as ts.TypeReference);

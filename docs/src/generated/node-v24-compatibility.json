@@ -208,9 +208,9 @@
       "entries": 152,
       "apiEntries": 152,
       "static": {
-        "supported": 6,
+        "supported": 7,
         "partial": 39,
-        "refused": 21,
+        "refused": 20,
         "not-implemented": 86,
         "by-design": 0,
         "unreviewed": 0,
@@ -12164,9 +12164,9 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "detail": "Explicitly rejected by a named compiler diagnostic.",
-        "verification": "explicit-refusal"
+        "status": "supported",
+        "detail": "Implemented by a dedicated static compiler/runtime path.",
+        "verification": "test-backed"
       }
     },
     {
