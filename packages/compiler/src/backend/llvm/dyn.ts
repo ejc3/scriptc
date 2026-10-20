@@ -34,10 +34,12 @@ import { InternalCompilerError } from "../../errors.js";
  *   ScrDynPath { parent, key, index } — the %ScrDynPath type. */
 import type { IrRecordShape, IrType, IrUnionDef } from "../../ir/ir.js";
 import {
+  accessorSlotProp,
   DYN_HANDLE_KINDS,
   isDirentShape,
   isDynTypedRefType,
   isRefCounted,
+  isUnitType,
   typeKey,
 } from "../../ir/ir.js";
 import { dynDesc, streamTypedRefEligible } from "../../ir/analysis.js";
@@ -129,6 +131,8 @@ export interface DynHost extends WalkerHost {
   /** The shared adapter record: live array capsules read its `arrayOps`, so a
    * narrower return type would hand the native compiler a copy without it. */
   liveDynRefAdapter(t: IrType): LlStreamTypedRefAdapter;
+  /** See moduleUsesDynBuiltinStream. */
+  usesDynBuiltinStream?(): boolean;
   liveDynUnionRefAdapter(t: IrType & { kind: "union" }): string;
   dynPromiseAdapter(t: IrType): string;
   isErrorClass(className: string): boolean;
@@ -138,6 +142,19 @@ export interface DynHost extends WalkerHost {
 }
 
 const FN_ATTRS = "#0";
+
+/** scr_dyn_builtin_stream_check's kind for a runtime stream class (the
+ * numbering of scr_dyn_builtin_class.c), or null. */
+function builtinStreamKind(className: string): number | null {
+  const kinds: Record<string, number> = {
+    "%Readable": 2,
+    "%Writable": 3,
+    "%Duplex": 4,
+    "%Transform": 5,
+    "%PassThrough": 6,
+  };
+  return kinds[className] ?? null;
+}
 
 export class LlDyn {
   private readonly dynMatchers = new Map<string, string>();
@@ -613,6 +630,18 @@ export class LlDyn {
    * tracking does not count the read's reference. Returns the value and
    * the matching release. */
   private memberRead(B: BlockBuilder, key: string, t: IrType): { value: string; release: string } {
+    // An accessor slot reads the getter or setter of the accessor property
+    // the checked-dynamic copy holds for it (see accessorSlotProp).
+    const slot = accessorSlotProp(key);
+    if (slot !== null) {
+      this.host.declare(`declare ptr @scr_dyn_obj_accessor_fn(ptr, ptr, ${this.S}, i1 zeroext)`);
+      this.host.declare(`declare void @scr_dyn_release(ptr)`);
+      const fn = B.tmp();
+      B.line(
+        `${fn} = call ptr @scr_dyn_obj_accessor_fn(ptr %d, ptr ${this.host.cstr(slot.prop)}, ${this.S} ${Buffer.byteLength(slot.prop, "utf8")}, i1 ${slot.kind === "set" ? "true" : "false"})`,
+      );
+      return { value: fn, release: "scr_dyn_release" };
+    }
     const held = this.isRecursiveShape(t) || this.holdsRecursiveShape(t);
     const release = held ? "scr_dyn_release_held" : "scr_dyn_release";
     this.host.declare(`declare void @${release}(ptr)`);
@@ -669,6 +698,46 @@ export class LlDyn {
 
   /** Emit the standard in-helper pending check: on a pending exception
    * run `cleanup` and return `dummy`. */
+  /** The failure block of a union dynCheck whose value matched no arm. A
+   * value of the one container kind exactly one arm can take (an object
+   * for the union's only record arm, an array for its only array arm,
+   * beside unit and scalar arms) runs that arm's builder, which throws the
+   * deepest failing path and the reason there (`expected string at
+   * $.order.owner.id, got undefined`) instead of the union's own outer
+   * path. Other values, and an arm builder that unexpectedly succeeds,
+   * fall through to the union's message. Only the failure path changes. */
+  private unionArmFailure(B: BlockBuilder, def: IrUnionDef, kind: string): void {
+    const scalar = (arm: IrType): boolean =>
+      isUnitType(arm) ||
+      arm.kind === "f64" ||
+      arm.kind === "bool" ||
+      arm.kind === "string" ||
+      arm.kind === "bigint";
+    const containers = def.arms.filter((arm) => !scalar(arm));
+    const arm = containers.length === 1 ? containers[0]! : null;
+    const container =
+      arm?.kind === "array"
+        ? DYN_KIND.ARR
+        : arm?.kind === "record" && !this.host.recordsById.get(arm.shapeId)?.tuple
+          ? DYN_KIND.OBJ
+          : null;
+    if (!arm || container === null) return;
+    const host = this.host;
+    const deep = B.newLabel("dcu.deep");
+    const outer = B.newLabel("dcu.outer");
+    const same = B.tmp();
+    B.line(`${same} = icmp eq i32 ${kind}, ${container}`);
+    B.condBr(same, deep, outer);
+    B.startBlock(deep);
+    const built = B.tmp();
+    B.line(`${built} = call ptr @${this.dynCheckHelper(arm)}(ptr %d, ptr %path)`);
+    this.pendingBail(B, "dcu.deep", () => {}, "ptr null");
+    const rc = vAdapters(host, arm);
+    B.line(`call void ${rc.release}(ptr ${built})`);
+    B.br(outer);
+    B.startBlock(outer);
+  }
+
   private pendingBail(B: BlockBuilder, hint: string, cleanup: () => void, dummy: string): void {
     const p = B.tmp();
     for (const line of this.host.pendingTestLines(p)) B.line(line.trimStart());
@@ -1379,22 +1448,29 @@ export class LlDyn {
    * differently), runs the checked-dynamic route — scr_json_parse plus the
    * dynCheck builder — which reports the exact error. Returns +1, or null
    * with the pending flag set. */
-  jsonParseHelper(t: IrType): string | null {
+  jsonParseHelper(t: IrType, fallback = false): string | null {
     if (t.kind !== "record" && t.kind !== "array") return null;
     const key = typeKey(t);
-    const existing = this.jsonParsers.get(key);
+    const cacheKey = fallback ? `fallback:${key}` : key;
+    const existing = this.jsonParsers.get(cacheKey);
     if (existing) return existing;
     if (!this.jsonSchemaSupported(t, new Set())) return null;
     const host = this.host;
     const name = `sc_jp_${this.jsonParsers.size}`;
-    this.jsonParsers.set(key, name);
+    this.jsonParsers.set(cacheKey, name);
     const schema = this.jsonSchema(t);
     const check = this.dynCheckHelper(t);
     host.declare(`declare ptr @scr_json_parse_schema(ptr, ptr)`);
     host.declare(`declare ptr @scr_json_parse(ptr)`);
     host.declare(`declare void @scr_dyn_release(ptr)`);
+    // A fallback site (dynCheck.fallback): a value that fails validation
+    // parks as the checked value (scr_dyn_check_recover) and the helper
+    // returns the dummy with no exception pending. Syntax errors still
+    // throw.
+    if (fallback) host.declare(`declare zeroext i1 @scr_dyn_check_recover(ptr)`);
+    const recover = fallback ? [`  call zeroext i1 @scr_dyn_check_recover(ptr %d)`] : [];
     this.defs.push(
-      `define internal ptr @${name}(ptr %text) ${FN_ATTRS} { ; JSON.parse as ${llvmCommentText(key)}`,
+      `define internal ptr @${name}(ptr %text) ${FN_ATTRS} { ; JSON.parse as ${llvmCommentText(key)}${fallback ? " (fallback)" : ""}`,
       `entry:`,
       `  %fast = call ptr @scr_json_parse_schema(ptr %text, ptr @${schema})`,
       `  %hit = icmp ne ptr %fast, null`,
@@ -1409,6 +1485,7 @@ export class LlDyn {
       `  ret ptr null`,
       `check:`,
       `  %v = call ptr @${check}(ptr %d, ptr null)`,
+      ...recover,
       `  call void @scr_dyn_release(ptr %d)`,
       `  ret ptr %v`,
       `}`,
@@ -1478,6 +1555,24 @@ export class LlDyn {
       B.line(`${ref} = call ptr @scr_dyn_typed_ref_unbox(ptr %d)`);
       B.terminate(`ret ptr ${ref}`);
       B.startBlock(lNext);
+      // A constructor-function stream (scr_dyn_builtin_stream.c) carries
+      // its runtime stream.
+      const streamKind = t.kind === "object" ? builtinStreamKind(t.className) : null;
+      if (streamKind !== null && this.host.usesDynBuiltinStream?.() === true) {
+        host.declare(`declare ptr @scr_dyn_builtin_stream_check(ptr, double)`);
+        const own = B.tmp(),
+          hit = B.tmp();
+        B.line(
+          `${own} = call ptr @scr_dyn_builtin_stream_check(ptr %d, double ${f64Lit(streamKind)})`,
+        );
+        B.line(`${hit} = icmp ne ptr ${own}, null`);
+        const lOwn = B.newLabel("dc.ctor"),
+          lNotOwn = B.newLabel("dc.notctor");
+        B.condBr(hit, lOwn, lNotOwn);
+        B.startBlock(lOwn);
+        B.terminate(`ret ptr ${own}`);
+        B.startBlock(lNotOwn);
+      }
       if (t.kind !== "union" && preserveRefs) {
         const kind = this.kindOf(B, "%d");
         const capsule = B.tmp();
@@ -1585,10 +1680,10 @@ export class LlDyn {
                     : []),
                 ]
               : [
-                  { index: 1, type: host.sizeType, name: "length" },
-                  { index: 2, type: host.sizeType, name: "capacity" },
+                  // The dense states follow the data slots: they move with data and capacity.
+                  { index: SCR_ARR_FIELD.len, type: "i32", name: "length" },
+                  { index: SCR_ARR_FIELD.cap, type: "i32", name: "capacity" },
                   { index: SCR_ARR_FIELD.data, type: "ptr" as const, name: "data" },
-                  { index: SCR_ARR_FIELD.present, type: "ptr" as const, name: "presence" },
                   { index: SCR_ARR_FIELD.filled, type: "i32" as const, name: "filled" },
                 ];
           members.forEach((member) => {
@@ -2245,6 +2340,7 @@ export class LlDyn {
           B.line(`call void @scr_dyn_release_v(ptr ${materialized})`);
           B.terminate(`ret ptr ${checked}`);
           B.startBlock(lFail);
+          this.unionArmFailure(B, def, kind);
           B.line(`call void @scr_dyn_check_fail(ptr %path, ptr ${want}, ptr %d)`);
           B.terminate(`ret ptr null`);
           break;
@@ -2313,6 +2409,7 @@ export class LlDyn {
         );
         B.terminate(`ret ptr ${checked}`);
         B.startBlock(lFail);
+        this.unionArmFailure(B, def, kind);
         B.line(`call void @scr_dyn_check_fail(ptr %path, ptr ${want}, ptr %d)`);
         B.terminate(`ret ptr null`);
         break;
@@ -2687,13 +2784,53 @@ export class LlDyn {
         // Keys insert in DECLARED order (JS insertion order); internal
         // '%'-fields follow so a record→dyn→record round trip keeps them.
         const byName = new Map(shape.fields.map((f) => [f.name, f]));
-        const order = shape.declaredOrder ?? shape.fields.map((f) => f.name);
+        // An accessor property is one key whose getter and setter are the
+        // slot closures (see accessorSlotProp), in accessorOrder's place.
+        const order = shape.accessorOrder ?? shape.declaredOrder ?? shape.fields.map((f) => f.name);
         const inOrder = new Set(order);
-        const dynFields = [
-          ...order.map((n) => byName.get(n)).filter((f) => f !== undefined),
-          ...shape.fields.filter((f) => !inOrder.has(f.name)),
+        const accessors = new Set(
+          shape.accessorOrder === undefined
+            ? []
+            : shape.fields.flatMap((f) => {
+                const slot = accessorSlotProp(f.name);
+                return slot === null ? [] : [slot.prop];
+              }),
+        );
+        type DynField = { name: string; type: IrType } | { accessor: string };
+        const dynFields: DynField[] = [
+          ...order.flatMap((n) => {
+            if (accessors.has(n)) return [{ accessor: n } as DynField];
+            const f = byName.get(n);
+            return f === undefined ? [] : [f as DynField];
+          }),
+          ...shape.fields.filter(
+            (f) =>
+              !inOrder.has(f.name) && !(accessors.size > 0 && accessorSlotProp(f.name) !== null),
+          ),
         ];
-        for (const f of dynFields) {
+        for (const entry of dynFields) {
+          if ("accessor" in entry) {
+            host.declare(
+              `declare void @scr_dyn_obj_set_accessor(ptr, ptr, ${host.sizeType}, ptr, ptr)`,
+            );
+            const boxed = (kind: "get" | "set"): string => {
+              const slot = byName.get(`%${kind}:${entry.accessor}`);
+              if (slot === undefined) return "null";
+              const fv = loadFieldOf(slot.name, slot.type);
+              const conv = B.tmp();
+              B.line(
+                `${conv} = call ptr @${this.toDynHelper(slot.type)}(${this.valTy(slot.type)} ${fv})`,
+              );
+              return conv;
+            };
+            const getter = boxed("get");
+            const setter = boxed("set");
+            B.line(
+              `call void @scr_dyn_obj_set_accessor(ptr ${d}, ptr ${host.cstr(entry.accessor)}, ${host.sizeType} ${Buffer.byteLength(entry.accessor, "utf8")}, ptr ${getter}, ptr ${setter}) ; ${llvmCommentText(entry.accessor)}`,
+            );
+            continue;
+          }
+          const f = entry;
           const klen = Buffer.byteLength(f.name, "utf8");
           const fv = loadFieldOf(f.name, f.type);
           // An ABSENT optional field contributes no key.
@@ -3265,8 +3402,9 @@ export class LlDyn {
       }
       B.startBlock(labels.get(DYN_KIND.BYTES)!);
       {
-        // Buffer-flavored values coerce utf8; plain Uint8Array joins
-        // its elements.
+        // Buffer-flavored values coerce utf8; typed arrays join their
+        // elements and a DataView answers "[object DataView]" (the
+        // runtime's conversion).
         const bufp = B.tmp();
         const bufRaw = B.tmp();
         const isBuf = B.tmp();
@@ -3288,10 +3426,9 @@ export class LlDyn {
         B.line(`call void @scr_str_release(ptr ${txt})`);
         B.br(done);
         B.startBlock(lJoin);
-        const bts = this.payloadOf(B, "%d", "ptr");
-        host.declare(`declare ptr @scr_bytes_join(ptr, ptr)`);
+        host.declare(`declare ptr @scr_dyn_to_string(ptr, ptr)`);
         const joined = B.tmp();
-        B.line(`${joined} = call ptr @scr_bytes_join(ptr ${bts}, ptr ${host.internLiteral(",")})`);
+        B.line(`${joined} = call ptr @scr_dyn_to_string(ptr %d, ptr null)`);
         this.putScrStr(B, "%b", joined);
         B.line(`call void @scr_str_release(ptr ${joined})`);
         B.br(done);

@@ -823,6 +823,41 @@ static ScrStr *scr_insp_array_buffer(const ScrBytes *h, const char *cls, double 
   return out;
 }
 
+/* DataView: formatValue's `DataView { [byteLength], [byteOffset],
+ * [buffer] }`, the buffer rendered one level deeper. `[DataView]` beyond
+ * depth. */
+static ScrStr *scr_insp_data_view(const ScrBytes *b, double recurse, double depth) {
+  if (recurse > depth) return scr_str_new("[DataView]", 10);
+  const ScrBytes *owner = b->backing ? b->backing : b;
+  char line[64];
+  scr_insp_begin(recurse + 1);
+  int n = snprintf(line, sizeof line, "[byteLength]: %.0f", scr_bytes_byte_len(b));
+  ScrStr *entry = scr_str_new(line, (size_t)n);
+  scr_insp_entry(entry, false);
+  scr_str_release(entry);
+  n = snprintf(line, sizeof line, "[byteOffset]: %.0f", scr_bytes_byte_offset(b));
+  entry = scr_str_new(line, (size_t)n);
+  scr_insp_entry(entry, false);
+  scr_str_release(entry);
+  ScrStr *buffer = scr_insp_array_buffer(owner, owner->shared ? "SharedArrayBuffer" : "ArrayBuffer",
+                                         recurse + 1, depth);
+  InspBuf eb = {0};
+  ib_cstr(&eb, "[buffer]: ");
+  ib_bytes(&eb, buffer->data, buffer->len);
+  scr_str_release(buffer);
+  entry = ib_take(&eb);
+  scr_insp_entry(entry, false);
+  scr_str_release(entry);
+  ScrStr *base = scr_str_new("", 0);
+  ScrStr *b0 = scr_str_new("DataView {", 10);
+  ScrStr *b1 = scr_str_new("}", 1);
+  ScrStr *out = scr_insp_end(base, b0, b1, recurse + 1, false, false);
+  scr_str_release(base);
+  scr_str_release(b0);
+  scr_str_release(b1);
+  return out;
+}
+
 static ScrStr *scr_insp_dyn_error(ScrDyn *d, double recurse, double depth);
 
 /* A runtime error through its node: the cached one, or one built from its
@@ -1060,6 +1095,16 @@ static ScrStr *scr_insp_class_tag(const char *cls, const char *tail) {
     ib_char(&out, ']');
   }
   return ib_take(&out);
+}
+
+/* Node prints a @@toStringTag that ends with "." and the constructor name
+ * (WebAssembly.Module for Module) in place of the name, without the
+ * bracketed tag. */
+static bool insp_tag_names_class(const char *tag, const char *cls) {
+  if (!tag) return false;
+  size_t tag_len = strlen(tag), cls_len = strlen(cls);
+  return tag_len > cls_len + 1 && tag[tag_len - cls_len - 1] == '.' &&
+         memcmp(tag + tag_len - cls_len, cls, cls_len) == 0;
 }
 
 /* A native Set or Map held as a checked-dynamic value: `Set(n) { a, b }`,
@@ -1460,11 +1505,15 @@ ScrStr *scr_insp_dyn(ScrDyn *d, double recurse, double depth) {
         ScrStr *body = scr_insp_dyn(view, recurse, depth);
         scr_dyn_release(view);
         InspBuf out = {0};
-        ib_cstr(&out, ops->cls);
-        if (ops->to_string_tag) {
-          ib_cstr(&out, " [");
+        if (insp_tag_names_class(ops->to_string_tag, ops->cls)) {
           ib_cstr(&out, ops->to_string_tag);
-          ib_char(&out, ']');
+        } else {
+          ib_cstr(&out, ops->cls);
+          if (ops->to_string_tag) {
+            ib_cstr(&out, " [");
+            ib_cstr(&out, ops->to_string_tag);
+            ib_char(&out, ']');
+          }
         }
         ib_char(&out, ' ');
         ib_bytes(&out, body->data, body->len);
@@ -1542,6 +1591,7 @@ ScrStr *scr_insp_dyn(ScrDyn *d, double recurse, double depth) {
     }
     case SCR_DYN_BYTES: {
       ScrBytes *b = d->v.bytes;
+      if (b->is_data_view) return scr_insp_data_view(b, recurse, depth);
       if (d->buffer) {
         /* Buffer-flavored (a stream chunk): Node's <Buffer ..> form. */
         return scr_insp_buffer(b);
