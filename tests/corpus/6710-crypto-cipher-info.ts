@@ -15,7 +15,7 @@ function show(label: string, run: () => unknown): void {
   }
 }
 
-for (const name of ["aes-256-cbc", "AES-256-CBC", "aes256", "id-aes128-gcm", "aes-128-gcm", "chacha20-poly1305", "aes-128-ecb", "aes-128-xts", "id-aes128-wrap-pad", "aes-128-cbc-cts", "aes-256-siv", "des3", "bf", "rc4", "2.16.840.1.101.3.4.1.2", "nope", ""])
+for (const name of ["aes-256-cbc", "AES-256-CBC", "aes256", "id-aes128-gcm", "aes-128-gcm", "chacha20-poly1305", "aes-128-ecb", "aes-128-xts", "id-aes128-wrap-pad", "aes-128-cbc-cts", "aes-256-siv", "des3", "bf", "rc4", "2.16.840.1.101.3.4.1.2", "idea", "IDEA-CBC", "idea-ofb", "1.3.6.1.4.1.188.7.1.1.2", "1.3.14.3.2.7", "1.2.410.200004.1.4", "nope", ""])
   show(`name ${name}`, () => getCipherInfo(name));
 for (const nid of [427, 895, 5, 1198, 0, -1, 99999])
   show(`nid ${nid}`, () => getCipherInfo(nid));
