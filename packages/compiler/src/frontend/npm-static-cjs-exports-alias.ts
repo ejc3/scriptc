@@ -64,13 +64,18 @@ function isRequireValue(expr: ts.Expression): boolean {
 
 /** True for a statement whose evaluation runs no code that could observe
  * the export object: declarations and member writes (`F.prototype.m =
- * function …`) without calls, directives, and bindings of required
- * modules (`var x = require("x")`: another module can reach this one's
- * export object only through a require cycle, which preflight's cycle
- * rules already judge). */
+ * function …`) without calls, and directives. */
 function inert(stmt: ts.Statement): boolean {
+  return inertOrRequire(stmt, false);
+}
+
+/** `inert`, and with `requires` also bindings of required modules (`var x
+ * = require("x")`: another module can reach this one's export object only
+ * through a require cycle, which preflight's cycle rules already judge). */
+function inertOrRequire(stmt: ts.Statement, requires: boolean): boolean {
   if (ts.isFunctionDeclaration(stmt) || ts.isEmptyStatement(stmt)) return true;
   if (
+    requires &&
     ts.isVariableStatement(stmt) &&
     stmt.declarationList.declarations.nodes.every(
       (d) =>
@@ -131,12 +136,19 @@ export function normalizeCjsFunctionExports(sf: ts.SourceFile): string | null {
     if (!isModuleExports(e.left)) continue;
     const value = unparen(e.right);
     if (!ts.isIdentifier(value)) return null;
-    if (whole !== null || !stmts.slice(0, i).every(inert)) return null;
+    if (whole !== null || !stmts.slice(0, i).every((st) => inertOrRequire(st, true))) return null;
     whole = { stmt, fn: value.text, rebinds };
   }
   if (whole === null) return null;
   const fnName = whole.fn;
   const wholeAt = stmts.indexOf(whole.stmt);
+  // A function declaration's member exports already compile as member
+  // exports, which keep their declared types; respelling them as members of
+  // the function needs dynamic values, so with requires above the export
+  // only a function bound to a variable (esbuild's hoisted `var`, whose
+  // member exports have no other form) is respelled.
+  const varBound = stmts.some((st, i) => i < wholeAt && functionValuedVar(st, fnName));
+  if (!varBound && !stmts.slice(0, wholeAt).every(inert)) return null;
   const fnDecls = stmts.filter(
     (st, i) =>
       (ts.isFunctionDeclaration(st) && st.name?.text === fnName && st.body !== undefined) ||

@@ -116,3 +116,18 @@ test.each([
 ])("%s keeps the module as it is", (_, source) => {
   expect(rewrite(source)).toBeNull();
 });
+
+test("a function declaration export behind requires keeps its member exports", () => {
+  // cross-spawn 7: the member exports keep their declared types as member
+  // exports; members of the function would need dynamic values.
+  expect(
+    rewrite(`'use strict';
+const cp = require('child_process');
+function spawn(command, args, options) { return cp.spawn(command, args, options); }
+function spawnSync(command, args, options) { return cp.spawnSync(command, args, options); }
+module.exports = spawn;
+module.exports.spawn = spawn;
+module.exports.sync = spawnSync;
+`),
+  ).toBeNull();
+});
