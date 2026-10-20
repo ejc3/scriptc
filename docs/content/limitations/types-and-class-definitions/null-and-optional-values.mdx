@@ -2,3 +2,4 @@
   Optional record and class fields and optional, default, and rest parameters also compile, including rest parameters typed `unknown[]` or `any[]`, whose functions take any number of arguments.
   A function value whose fixed parameters are all `unknown` or `any`, or that has none, can be stored where such a variadic function type without fixed parameters is expected: each call passes the arguments in order, `undefined` for the ones the caller left out.
   Other function values with fixed parameters cannot be stored there.
+  In the other direction, a variadic function without fixed parameters can be passed where a function with fixed parameters is expected, such as an array method or promise callback, when each parameter type has a dynamic representation: it receives every argument the caller passes.

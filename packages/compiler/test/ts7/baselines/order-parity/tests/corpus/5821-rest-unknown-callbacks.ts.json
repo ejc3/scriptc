@@ -1,0 +1,6 @@
+{
+ "order": [
+  "<repo>/tests/corpus/5821-rest-unknown-callbacks.ts"
+ ],
+ "diags": []
+}

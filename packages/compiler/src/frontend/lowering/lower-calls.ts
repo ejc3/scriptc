@@ -5808,6 +5808,21 @@ export function lowerPromiseMethodCall(
     ) {
       cb = { kind: "dynFrom", value: cb, type: DYN, loc };
     }
+    // A checked-dynamic rest handler (`(...args: unknown[]) => void`, a
+    // mock.fn() mock) takes its arguments as one hidden array: it rides
+    // the dyn-handler desugar below, which calls it with the settled value.
+    if (
+      cb.type.kind === "func" &&
+      cb.type.rest === true &&
+      cb.type.restAbi === undefined &&
+      canBoxFuncIntoDyn(
+        cb.type,
+        (id) => lowerer.shapes.get(id),
+        (id) => lowerer.unions.get(id),
+      )
+    ) {
+      cb = { kind: "dynFrom", value: cb, type: DYN, loc };
+    }
     // A CHECKED-DYNAMIC handler VALUE (`p.then(common.mustCall())` — the
     // Node-suite wrapper is an untyped rest-args function): the same
     // async desugar with the handler called through the checked-dynamic tree — the

@@ -215,8 +215,19 @@ export function lowerArrayCallback(
         : null);
     if (ret && ret.kind !== "void") fnArg = lowerer.coerceToExpected(fnArg, funcOf(full, ret));
   }
+  // A checked-dynamic rest callback (`(...args: unknown[]) => void`, a
+  // mock.fn() mock) receives every argument the helper passes.
   if (
     fnArg.type.kind === "func" &&
+    fnArg.type.rest === true &&
+    fnArg.type.restAbi === undefined &&
+    fnArg.type.params.length === 0
+  ) {
+    fnArg = lowerer.coerceToExpected(fnArg, funcOf(full, fnArg.type.ret));
+  }
+  if (
+    fnArg.type.kind === "func" &&
+    fnArg.type.rest !== true &&
     fnArg.type.params.length <= full.length &&
     fnArg.type.params.every((param, i) => lowerer.coercibleValue(full[i]!, param))
   ) {
@@ -238,6 +249,7 @@ export function lowerArrayCallback(
   }
   if (
     fnArg.type.kind !== "func" ||
+    fnArg.type.rest === true ||
     fnArg.type.params.length > full.length ||
     !fnArg.type.params.every((p, i) => typeEquals(p, full[i]!))
   ) {

@@ -91264,6 +91264,7 @@
           "tests/fixtures/node-test/cases/ctx-plan.ts",
           "tests/fixtures/node-test/cases/get-test-context-cancelled.ts",
           "tests/fixtures/node-test/cases/get-test-context.ts",
+          "tests/fixtures/node-test/cases/mock-callbacks.ts",
           "tests/fixtures/node-test/cases/mock-fn-default.ts",
           "tests/fixtures/node-test/cases/mock-fn.ts",
           "tests/fixtures/node-test/cases/mock-method.ts",
@@ -92677,6 +92678,7 @@
         "tests": [
           "tests/fixtures/node-test/cases/mock-fn.ts",
           "tests/fixtures/node-test/cases/mock-fn-default.ts",
+          "tests/fixtures/node-test/cases/mock-callbacks.ts",
           "tests/harness/node-test.test.ts"
         ]
       },

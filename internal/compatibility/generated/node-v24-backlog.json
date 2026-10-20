@@ -66609,6 +66609,7 @@
           "tests": [
             "tests/fixtures/node-test/cases/mock-fn.ts",
             "tests/fixtures/node-test/cases/mock-fn-default.ts",
+            "tests/fixtures/node-test/cases/mock-callbacks.ts",
             "tests/harness/node-test.test.ts"
           ]
         }

@@ -235,10 +235,44 @@ export function lowerExpr(lowerer: Lowerer, expr: ts.Expression): IrExpr {
     }
     if (lowered.type.kind === "void" && (lowerer.typeOf(expr).flags & ts.TypeFlags.Never) !== 0)
       lowerer.neverValued.add(lowered);
+    if (lowered.type.kind === "record") lowered = callableInFunctionSlot(lowerer, expr, lowered);
     return lowered;
   } finally {
     lowerExprDepth--;
   }
+}
+
+/** A function with properties (a hybrid record such as a node:test mock)
+ * in a position whose contextual type is a plain function type — a
+ * callback argument, a function-typed variable or field — is its %call
+ * function there, as JS passes the function itself: `setTimeout(mock)`,
+ * `emitter.on("x", mock)` and `items.forEach(mock)` call the mock. */
+function callableInFunctionSlot(lowerer: Lowerer, expr: ts.Expression, lowered: IrExpr): IrExpr {
+  const callable = lowerer.hybridCallUnwrap(lowered);
+  if (callable === lowered) return lowered;
+  const contextual = lowerer.checker.getContextualType(expr);
+  if (!contextual) return lowered;
+  const slot = lowerer.checker.getNonNullableType(contextual);
+  if (
+    lowerer.checker.getCallSignatures(slot).length === 0 ||
+    lowerer.checker.getPropertiesOfType(slot).length > 0
+  )
+    return lowered;
+  // A checked-dynamic rest function (mock.fn()'s default type) takes its
+  // arguments as one hidden array. Where the slot has fixed parameters, it
+  // adapts to them here, so the callers that invoke the slot pass every
+  // argument through the array; without an adaptation the record stays.
+  if (
+    callable.type.kind === "func" &&
+    callable.type.rest === true &&
+    callable.type.restAbi === undefined
+  ) {
+    const slotT = lowerer.mapTypeOf(slot);
+    if (slotT?.kind !== "func" || slotT.rest === true) return callable;
+    const adapted = lowerer.coerceToExpected(callable, slotT);
+    return typeEquals(adapted.type, slotT) ? adapted : lowered;
+  }
+  return callable;
 }
 
 /** `number | undefined` from a NaN-coded double whose slot never holds a

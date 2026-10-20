@@ -1,4 +1,5 @@
 - **Test mocks:** `mock.fn`, `mock.method`, `mock.restoreAll` and `mock.reset` compile, on the module's `mock` and on `t.mock`.
+  A mock passed where a function is expected, such as a timer callback, an EventEmitter listener, an array or promise callback, or a function-typed parameter or variable, is called as that function and records each call.
   `mock.method` mocks a function-valued field of a record, such as an object literal or an interface-typed object.
   Class instances, builtin objects, and object literals whose methods use `this` throw `SC2020`.
   Calls through the object record it as `this`, including calls of a method read off the object and called on its own, where Node records `undefined`.

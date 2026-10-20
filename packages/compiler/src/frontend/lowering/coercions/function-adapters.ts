@@ -253,13 +253,70 @@ function funcIntoDynRestAdapter(
   return name;
 }
 
+/** Adapt a checked-dynamic rest function without fixed parameters (`(...args:
+ * unknown[]) => R`, mock.fn()'s default type) to a fixed-parameter
+ * signature: the adapter boxes each argument and calls the function with
+ * all of them, as JS passes every argument to a rest parameter. Null
+ * unless every parameter boxes to a dynamic value and the result is
+ * discarded or converts. */
+function funcFromDynRestAdapter(
+  lowerer: Lowerer,
+  fromT: IrType & { kind: "func" },
+  toT: IrType & { kind: "func" },
+  loc: SrcLoc,
+): string | null {
+  if (toT.rest === true || !toT.params.every((p) => p.kind === "dyn" || lowerer.dynConvertible(p)))
+    return null;
+  if (toT.ret.kind !== "void" && !lowerer.coercibleValue(DYN, toT.ret)) return null;
+  const key = `fnadapt:${typeKey(fromT)}:${typeKey(toT)}`;
+  const existing = lowerer.coercions.retags.get(key);
+  if (existing) return existing;
+  const name = `%fn.adapt.${lowerer.coercions.retags.size}`;
+  lowerer.coercions.retags.set(key, name);
+  lowerer.freshClosureAdapters.add(name);
+  const params: IrParam[] = toT.params.map((t, i) => ({
+    localId: `a.${i}`,
+    name: `a${i}`,
+    type: t,
+  }));
+  const call: IrExpr = {
+    kind: "dynCall",
+    callee: {
+      kind: "dynFrom",
+      value: { kind: "varRef", localId: "f.0", type: fromT, loc },
+      type: DYN,
+      loc,
+    },
+    calleeName: "callback",
+    args: params.map((p): IrExpr =>
+      lowerer.coerceToExpected({ kind: "varRef", localId: p.localId, type: p.type, loc }, DYN),
+    ),
+    type: DYN,
+    loc,
+  };
+  let body: IrStmt[];
+  if (toT.ret.kind === "void") {
+    body = [
+      { kind: "exprStmt", expr: call, loc },
+      { kind: "return", value: null, loc },
+    ];
+  } else {
+    const result = lowerer.coerceToExpected(call, toT.ret);
+    if (!typeEquals(result.type, toT.ret))
+      throw new InternalCompilerError("lowerer bug: probed fn-adapter return stopped coercing");
+    body = [{ kind: "return", value: result, loc }];
+  }
+  lowerer.liftedFns.push(...buildFunctionAdapter(name, fromT, toT, params, [], body, loc));
+  return name;
+}
+
 /** Adapt a function value to a destination signature, forwarding and
  * converting its arguments and result. Unsupported parameter/result pairs
  * produce checked traps when called. Rest signatures are refused, except a
  * typed-rest source in a slot with fixed parameters, which the rest
  * packing adapter serves, and a fixed-parameter function into a
  * checked-dynamic rest signature without fixed parameters
- * (funcIntoDynRestAdapter). */
+ * (funcIntoDynRestAdapter) and the reverse (funcFromDynRestAdapter). */
 export function funcCoerceAdapter(
   lowerer: Lowerer,
   fromT: IrType & { kind: "func" },
@@ -268,8 +325,20 @@ export function funcCoerceAdapter(
 ): string | null {
   if (restPackingAdapterFits(lowerer, fromT, toT))
     return restPackingAdapter(lowerer, fromT, toT, loc);
-  if (toT.rest === true && toT.restAbi === undefined && toT.params.length === 0)
+  if (
+    toT.rest === true &&
+    toT.restAbi === undefined &&
+    toT.argumentsAll !== true &&
+    toT.params.length === 0
+  )
     return funcIntoDynRestAdapter(lowerer, fromT, toT, loc);
+  if (
+    fromT.rest === true &&
+    fromT.restAbi === undefined &&
+    fromT.argumentsAll !== true &&
+    fromT.params.length === 0
+  )
+    return funcFromDynRestAdapter(lowerer, fromT, toT, loc);
   if (fromT.rest === true || toT.rest === true) return null;
   if (fromT.params.length > toT.params.length) return null;
   // Piece dispositions beyond coercibleValue, all CHECKER-APPROVED
