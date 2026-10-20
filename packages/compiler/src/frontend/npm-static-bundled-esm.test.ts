@@ -365,3 +365,51 @@ test("a minified initializer that ends with its class still hoists it", () => {
   );
   expect(lowered).toContain("class Counter{");
 });
+
+test("an empty namespace and names a module does not export read undefined", () => {
+  const lowered = expectSameBehavior(`"use strict";
+${helpers}${lazyModule}
+var manifest_exports = {};
+var init_manifest = __esm({ "src/manifest.ts"() { console.log("manifest init"); } });
+function read() {
+  const manifest = (init_manifest(), __toCommonJS(manifest_exports));
+  const lazy = (init_lazy(), __toCommonJS(lazy_exports));
+  return [manifest.version, lazy.missing, lazy.__esModule, lazy.VALUE].join(" ");
+}
+console.log(read());
+`);
+  expect(lowered).not.toContain("manifest_exports");
+});
+
+test("a star re-export of a types-only module into the entry runs its initializer", () => {
+  const lowered = expectSameBehavior(`"use strict";
+${helpers}
+var __reExport = (target, mod, secondTarget) => (__copyProps(target, mod, "default"), secondTarget && __copyProps(secondTarget, mod, "default"));
+var index_exports = {};
+__export(index_exports, { run: () => run });
+module.exports = __toCommonJS(index_exports);
+var manifest_exports = {};
+var init_manifest = __esm({ "src/manifest.ts"() { console.log("manifest init"); } });
+__reExport(index_exports, (init_manifest(), __toCommonJS(manifest_exports)), module.exports);
+function run() { return "ran"; }
+console.log(Object.keys(module.exports).join(","), module.exports.run());
+`);
+  expect(lowered).not.toContain("module.exports);");
+});
+
+test("the bundle's own entry namespace answers member reads", () => {
+  expectSameBehavior(`"use strict";
+${helpers}
+var index_exports = {};
+__export(index_exports, { KIND: () => KIND, late: () => late });
+module.exports = __toCommonJS(index_exports);
+var KIND;
+var init_index = __esm({ "src/index.ts"() { KIND = "lambda"; } });
+function late() {
+  const index = (init_index(), __toCommonJS(index_exports));
+  return index.KIND + " " + index.missing;
+}
+init_index();
+console.log(late());
+`);
+});
