@@ -100,3 +100,33 @@ module.exports.bump = bump;
     "main.cjs: calling 'bump' through a module's whole export when the function may read 'this'",
   ]);
 });
+
+test("a builtin call with a callback above a function export's table keeps the table optional", () => {
+  // Array.from runs the callback, which can call the exported function
+  // before `var t` is assigned, so `t` stays runtime-optional and its
+  // computed write keeps the fence semver's shape had before.
+  expect(
+    fences(
+      {
+        "main.cjs": `"use strict";
+const version = require("./version.cjs");
+console.log(version());
+`,
+        "version.cjs": `"use strict";
+exports = module.exports = Version;
+var early = Array.from([1], () => module.exports());
+var t = {};
+var R = 0;
+function tok(n) {
+  t[n] = R++;
+}
+tok("A");
+function Version() {
+  return typeof t;
+}
+`,
+      },
+      "runtime-optional",
+    ),
+  ).toEqual(["version.cjs: a computed read from a runtime-optional global"]);
+});

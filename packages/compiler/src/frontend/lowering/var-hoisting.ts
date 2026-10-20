@@ -335,18 +335,60 @@ function isExportsTarget(e: ts.Expression): boolean {
 
 const PURE_GLOBALS = new Set(["Object", "Array", "Number", "String", "Math", "JSON", "Symbol"]);
 
-/** A call whose callee is a builtin method of a literal or a standard
- * global: it cannot run user code. */
-function builtinCall(callee: ts.Expression): boolean {
+/** A call of a builtin method of a literal or a standard global whose
+ * arguments are primitives: it cannot run user code. An argument that may
+ * be a function or an object (`Array.from(xs, () => …)`, `JSON.parse(s,
+ * reviver)`) can reach user code through a callback, an iterator or a
+ * conversion. */
+function builtinCall(call: ts.CallExpression): boolean {
+  const callee = call.expression;
   if (!ts.isPropertyAccessExpression(callee)) return false;
   let root: ts.Expression = callee.expression;
   while (ts.isPropertyAccessExpression(root)) root = root.expression;
   return (
-    ts.isRegularExpressionLiteral(root) ||
-    ts.isStringLiteral(root) ||
-    ts.isNumericLiteral(root) ||
-    (ts.isIdentifier(root) && PURE_GLOBALS.has(root.text))
+    (ts.isRegularExpressionLiteral(root) ||
+      ts.isStringLiteral(root) ||
+      ts.isNumericLiteral(root) ||
+      (ts.isIdentifier(root) && PURE_GLOBALS.has(root.text))) &&
+    call.arguments.nodes.every(primitiveArgument)
   );
+}
+
+/** A literal, `undefined`, a read under `process` (`process.env.NODE_DEBUG`),
+ * or an operator over those. */
+function primitiveArgument(e: ts.Expression): boolean {
+  if (
+    ts.isStringLiteral(e) ||
+    ts.isNumericLiteral(e) ||
+    ts.isNoSubstitutionTemplateLiteral(e) ||
+    e.kind === ts.SyntaxKind.TrueKeyword ||
+    e.kind === ts.SyntaxKind.FalseKeyword ||
+    e.kind === ts.SyntaxKind.NullKeyword
+  )
+    return true;
+  if (ts.isIdentifier(e)) return e.text === "undefined";
+  if (ts.isParenthesizedExpression(e) || ts.isTypeOfExpression(e))
+    return primitiveArgument(e.expression);
+  if (ts.isPrefixUnaryExpression(e)) return primitiveArgument(e.operand);
+  if (ts.isBinaryExpression(e))
+    return (
+      (e.operatorToken.kind < ts.SyntaxKind.FirstAssignment ||
+        e.operatorToken.kind > ts.SyntaxKind.LastAssignment) &&
+      primitiveArgument(e.left) &&
+      primitiveArgument(e.right)
+    );
+  if (ts.isConditionalExpression(e))
+    return (
+      primitiveArgument(e.condition) &&
+      primitiveArgument(e.whenTrue) &&
+      primitiveArgument(e.whenFalse)
+    );
+  if (ts.isPropertyAccessExpression(e)) {
+    let root: ts.Expression = e;
+    while (ts.isPropertyAccessExpression(root)) root = root.expression;
+    return ts.isIdentifier(root) && root.text === "process";
+  }
+  return false;
 }
 
 /** True when evaluating `stmt` cannot re-enter the module: no call into
@@ -365,7 +407,7 @@ function cannotReenter(stmt: ts.Statement): boolean {
     )
       return "skip";
     if (ts.isCallExpression(n)) {
-      if (!builtinCall(n.expression)) quiet = false;
+      if (!builtinCall(n)) quiet = false;
     } else if (ts.isNewExpression(n) || ts.isTaggedTemplateExpression(n)) {
       quiet = false;
     } else if (ts.isIdentifier(n) && (n.text === "module" || n.text === "exports")) {
