@@ -76,7 +76,7 @@ async function buildStatic(entry: string, npmStatic: string[] | "auto"): Promise
     ...globSync(
       join(fixturesRoot, "npm/node_modules/cryptozoo/**/*.{js,mjs,cjs,json,d.ts}"),
     ).sort(),
-    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2595)
+    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2596)
     ...globSync(join(fixturesRoot, "npm/node_modules/gt*/**/*.{js,cjs,json}")).sort(),
     ...globSync(join(fixturesRoot, "npm/store/gt*/**/*.{js,cjs,json}")).sort(),
   ];
@@ -1662,6 +1662,14 @@ describe(`npm-static pilots${sanitize ? " (sanitized)" : ""}`, () => {
   test("bundled namespace reads 2595-bundled-entry-namespace byte-match Node", async () => {
     await expectNodeParity(join(fixturesRoot, "npm/cases/2595-bundled-entry-namespace/main.ts"), [
       "gtemptyns",
+    ]);
+  }, 180_000);
+
+  // 2596: cross-spawn 7's function export with typed function members
+  // behind require bindings.
+  test("function export members 2596-function-export-members byte-match Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2596-function-export-members/main.ts"), [
+      "gtspawnshape",
     ]);
   }, 180_000);
 
