@@ -74,3 +74,11 @@ try {
 } catch (e) {
   if (isRange(e)) console.log("caught", e.message, e.name);
 }
+function isQuiet(e: unknown): e is string {
+  return typeof e === "string";
+}
+try {
+  throw "quiet";
+} catch (e) {
+  if (isQuiet(e)) console.log("text", e.toUpperCase(), e.length, e.slice(1));
+}

@@ -208,6 +208,7 @@ export function lowerPredicateNarrowedCall(
     const value = lowerer.lowerExpr(receiver);
     // A claimed catch binding is a checked-dynamic value (caughtRead).
     if (value.type.kind === "dyn") {
+      if (claimsPrimitive(lowerer.typeOf(receiver))) return null;
       const type = lowerer.mapTypeOf(lowerer.typeOf(call));
       return type && invoke(value, type);
     }
@@ -271,6 +272,18 @@ function isPrimitive(type: IrType): boolean {
   return (
     type.kind === "f64" || type.kind === "bool" || type.kind === "string" || type.kind === "bigint"
   );
+}
+
+/** `type` admits a string, number, boolean or bigint, whose methods have no
+ * checked-dynamic invocation. */
+function claimsPrimitive(type: ts.Type): boolean {
+  const primitive =
+    ts.TypeFlags.StringLike |
+    ts.TypeFlags.NumberLike |
+    ts.TypeFlags.BooleanLike |
+    ts.TypeFlags.BigIntLike;
+  const types = type.isUnionType() ? ts.constituentTypes(type) : [type];
+  return types.some((t) => (t.flags & primitive) !== 0);
 }
 
 /** `node` is a link of an optional chain (`a?.b.c`), which lowers only as
