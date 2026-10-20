@@ -46,11 +46,11 @@ const u = new URL("https://example.com/x?a=1");
 console.log(URL.createObjectURL(new Blob(["data"])));
 u.searchParams.get("a");
 /* The one-shot zlib/raw/gzip codecs take Node's options (the deflateSync
- * call lowers), while Brotli remains a member-qualified fence with the
- * lowered family named. */
-import { brotliCompressSync, deflateSync } from "zlib";
+ * call lowers), while the Brotli streams remain a member-qualified fence
+ * with the lowered family named. */
+import { createBrotliCompress, deflateSync } from "zlib";
 deflateSync("data", { level: 9, strategy: 1 });
-brotliCompressSync(Buffer.from("data"));
+createBrotliCompress();
 /* The http2 compatibility slice's @types/node-world fences (divergence
  * 56): the SNICallback option fences by name with the serve-one-pair
  * hint, and its conditional-spread portless spelling fences at the

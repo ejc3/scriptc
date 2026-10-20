@@ -163,6 +163,7 @@ async function runtimeFingerprintInputGroups(
       { label: "quickjs-ng", dir: join(rtDir, "..", "vendor", "quickjs-ng") },
       { label: "mbedtls", dir: join(rtDir, "..", "vendor", "mbedtls") },
       { label: "zlib", dir: join(rtDir, "..", "vendor", "zlib") },
+      { label: "brotli", dir: join(rtDir, "..", "vendor", "brotli") },
       { label: "curl", dir: join(rtDir, "..", "vendor", "curl") },
     ].map(async (group) => {
       const names = (await nativeSourceFiles(group.dir, true))

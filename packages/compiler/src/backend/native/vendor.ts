@@ -18,6 +18,9 @@ export const {
   ensureZlibObjects,
   tlsArchivePath,
   ensureTlsArchive,
+  vendorBrotliDir,
+  brotliArchivePath,
+  ensureBrotliArchive,
   LRE_SOURCES,
   ZLIB_SOURCES,
 } = createVendorArchives({

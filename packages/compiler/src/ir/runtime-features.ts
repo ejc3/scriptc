@@ -732,6 +732,11 @@ const RUNTIME_FEATURE_RULES = {
    * scr_webcrypto.c. */
   webcrypto: rule({ prefixes: ["webcrypto."] }),
   zlib: rule({ prefixes: ["zlib."] }),
+  /** The Brotli one-shot forms: scr_brotli.c and the vendored google/brotli
+   * archive (on top of `zlib`, whose option helpers they share). */
+  brotli: rule({
+    fns: ["zlib.brotliSync", "zlib.brotliSyncDyn", "zlib.brotliCb", "zlib.brotliCbDyn"],
+  }),
 };
 
 type RuntimeFeatureName = keyof typeof RUNTIME_FEATURE_RULES;
@@ -790,6 +795,7 @@ function noRuntimeFeatures(): RuntimeFeatures {
     wasm: false,
     webcrypto: false,
     zlib: false,
+    brotli: false,
   };
 }
 

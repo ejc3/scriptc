@@ -76,6 +76,8 @@ export const OPTIONAL_RUNTIME_SOURCES = [
   // Blob and File box their reads as dyn promises through scr_async_dyn.c.
   ["scr_blob.c", "dynAsync"],
   ["scr_zlib.c", "zlib"],
+  // The Brotli one-shot forms over the google/brotli archive.
+  ["scr_brotli.c", "brotli"],
   ["scr_events.c", "events"],
   ["scr_readline.c", "events"],
   ["scr_readline_tty.c", all("events", "regex")],
@@ -195,6 +197,7 @@ export function createRuntimePackMatrix({
     { id: "libregexp", predicate: "regex" },
     { id: "zlib", predicate: "zlibEffective" },
     { id: "mbedtls", predicate: any("tlsEffective", "cipher") },
+    { id: "brotli", predicate: "brotli" },
   ];
   const matrix = withLibraryRuntimeFlavors(
     withWorkerRuntimeVariants({

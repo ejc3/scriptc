@@ -85,6 +85,7 @@ async function build() {
   const quickjs = join(vendorRoot, "quickjs-ng");
   const zlib = join(vendorRoot, "zlib");
   const mbedtls = join(vendorRoot, "mbedtls");
+  const brotli = join(vendorRoot, "brotli");
   const qjsSources = ["dtoa.c", "libregexp.c", "libunicode.c", "quickjs.c"];
   const lreSources = ["libregexp.c", "libunicode.c"];
   const zlibSources = [
@@ -99,6 +100,45 @@ async function build() {
     "trees.c",
     "uncompr.c",
     "zutil.c",
+  ];
+  // google/brotli's library units (packages/compiler/src/backend/vendor-inputs.ts
+  // BROTLI_SOURCES).
+  const brotliSources = [
+    "common/constants.c",
+    "common/context.c",
+    "common/dictionary.c",
+    "common/platform.c",
+    "common/shared_dictionary.c",
+    "common/transform.c",
+    "dec/bit_reader.c",
+    "dec/decode.c",
+    "dec/huffman.c",
+    "dec/prefix.c",
+    "dec/state.c",
+    "dec/static_init.c",
+    "enc/backward_references.c",
+    "enc/backward_references_hq.c",
+    "enc/bit_cost.c",
+    "enc/block_splitter.c",
+    "enc/brotli_bit_stream.c",
+    "enc/cluster.c",
+    "enc/command.c",
+    "enc/compound_dictionary.c",
+    "enc/compress_fragment.c",
+    "enc/compress_fragment_two_pass.c",
+    "enc/dictionary_hash.c",
+    "enc/encode.c",
+    "enc/encoder_dict.c",
+    "enc/entropy_encode.c",
+    "enc/fast_log.c",
+    "enc/histogram.c",
+    "enc/literal_cost.c",
+    "enc/memory.c",
+    "enc/metablock.c",
+    "enc/static_dict.c",
+    "enc/static_dict_lut.c",
+    "enc/static_init.c",
+    "enc/utf8_util.c",
   ];
   const sha256 = async (path) =>
     createHash("sha256")
@@ -131,6 +171,10 @@ async function build() {
     const width = Math.max(1, Math.min(8, availableParallelism()));
     return parallelMap(items, width, task);
   };
+  // One object per source; sources in subdirectories (Brotli's common/,
+  // dec/ and enc/) are named after their directory as well, so two files of
+  // one name in different directories stay separate archive members.
+  const objectName = (source) => source.replace(/\//g, "_").replace(/\.c$/, ".o");
   const archive = async (id, sources, sourceRoot, flags) => {
     process.stdout.write(`building ${packageManifest.name} ${id} archive\n`);
     const root = join(stagedOutputRoot, "vendor", id);
@@ -138,7 +182,7 @@ async function build() {
     await parallel(sources, async (source) =>
       compile(
         join(sourceRoot, source),
-        join(objectRoot, source.replace(/\.c$/, ".o")),
+        join(objectRoot, objectName(source)),
         unalignedVendorSources.has(source)
           ? flags.filter((flag) => !codeAlignment.includes(flag))
           : flags,
@@ -148,7 +192,7 @@ async function build() {
     await createDeterministicArchive(
       archiver,
       output,
-      sources.map((source) => join(objectRoot, source.replace(/\.c$/, ".o"))),
+      sources.map((source) => join(objectRoot, objectName(source))),
       archiverArgs,
     );
     await rm(objectRoot, { recursive: true, force: true });
@@ -227,6 +271,7 @@ async function build() {
               ...(unit.source === "scr_zlib.c" || unit.source === "scr_fetch.c"
                 ? ["-I", zlib]
                 : []),
+              ...(unit.source === "scr_brotli.c" ? ["-I", join(brotli, "include")] : []),
             ];
             // Worker variants link only into executables, whose own TLS block
             // holds every runtime thread-local: on ELF the initial-exec model
@@ -396,6 +441,17 @@ async function build() {
                   ]),
                 ]
               : []),
+            ...(requestedArchives.has("brotli")
+              ? [
+                  await archive("brotli", brotliSources, brotli, [
+                    ...vendorTarget,
+                    "-std=c11",
+                    "-O2",
+                    "-I",
+                    join(brotli, "include"),
+                  ]),
+                ]
+              : []),
           ];
     await assertArtifactsExcludeStrings(
       stagedOutputRoot,
@@ -413,6 +469,7 @@ async function build() {
       ],
       [join(zlib, "LICENSE"), "artifacts/licenses/zlib.txt", "Zlib"],
       [join(mbedtls, "LICENSE"), "artifacts/licenses/mbedtls.txt", "Apache-2.0"],
+      [join(brotli, "LICENSE"), "artifacts/licenses/brotli.txt", "MIT"],
     ];
     licensed.push([
       join(vendorRoot, "unicode", "LICENSE"),

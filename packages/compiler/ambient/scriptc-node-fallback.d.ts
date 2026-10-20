@@ -4269,8 +4269,9 @@ declare module "node:readline/promises" {
  * binaries. Callback forms use the executable worker pool. Options stay
  * declared so reached uses receive a named SC2020 refusal. The Deflate,
  * Inflate, Gzip, Gunzip, DeflateRaw, InflateRaw and Unzip streams are
- * runtime Transform streams; Brotli and Zstd remain outside the lowered
- * surface. */
+ * runtime Transform streams. The Brotli one-shot forms run the vendored
+ * google/brotli library, linked only into Brotli-using binaries; the Brotli
+ * streams and Zstd remain outside the lowered surface. */
 declare module "zlib" {
   import { Transform } from "stream";
   export interface ZlibOptions {
@@ -4327,12 +4328,31 @@ declare module "zlib" {
   ): void;
   export function unzipSync(data: string | Uint8Array, options?: ZlibOptions): Buffer;
   export function crc32(data: string | Uint8Array, value?: number): number;
-  export function brotliCompressSync(data: string | Uint8Array): Buffer;
-  export function brotliDecompressSync(data: Uint8Array): Buffer;
-  /* Brotli needs a codec the static runtime does not vendor: these are
-   * declared so their uses receive the named refusal. */
+  export interface BrotliOptions {
+    flush?: number;
+    finishFlush?: number;
+    chunkSize?: number;
+    params?: { [key: number]: boolean | number };
+    maxOutputLength?: number;
+    info?: boolean;
+    dictionary?: ArrayBufferView | ArrayBuffer;
+  }
+  export function brotliCompressSync(data: string | Uint8Array, options?: BrotliOptions): Buffer;
+  export function brotliDecompressSync(data: string | Uint8Array, options?: BrotliOptions): Buffer;
   export function brotliCompress(data: string | Uint8Array, callback: ZlibCallback): void;
-  export function brotliDecompress(data: Uint8Array, callback: ZlibCallback): void;
+  export function brotliCompress(
+    data: string | Uint8Array,
+    options: BrotliOptions,
+    callback: ZlibCallback,
+  ): void;
+  export function brotliDecompress(data: string | Uint8Array, callback: ZlibCallback): void;
+  export function brotliDecompress(
+    data: string | Uint8Array,
+    options: BrotliOptions,
+    callback: ZlibCallback,
+  ): void;
+  /* The Brotli streams have no lowering: they are declared so their uses
+   * receive the named refusal. */
   export function createBrotliCompress(options?: ZlibOptions): Transform;
   export function createBrotliDecompress(options?: ZlibOptions): Transform;
   export class BrotliCompress extends Transform {

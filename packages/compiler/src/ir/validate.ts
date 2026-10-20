@@ -4777,9 +4777,12 @@ function validateFunction(
       e.fn === "zlib.gunzipCb" ||
       e.fn === "zlib.unzipCb" ||
       e.fn === "zlib.cbOpts" ||
-      e.fn === "zlib.cbOptsDyn"
+      e.fn === "zlib.cbOptsDyn" ||
+      e.fn === "zlib.brotliCb" ||
+      e.fn === "zlib.brotliCbDyn"
     ) {
-      const cbT = e.args[e.fn.startsWith("zlib.cbOpts") ? 3 : 1]?.type;
+      const cbT =
+        e.args[e.fn.startsWith("zlib.cbOpts") || e.fn.startsWith("zlib.brotliCb") ? 3 : 1]?.type;
       let ok = cbT?.kind === "func" && cbT.ret.kind === "void" && cbT.params.length <= 2;
       if (ok && cbT?.kind === "func" && cbT.params.length >= 1) {
         const error = cbT.params[0]!;

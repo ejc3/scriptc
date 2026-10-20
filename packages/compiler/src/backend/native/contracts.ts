@@ -234,6 +234,10 @@ export interface CcOptions {
   cipher?: boolean;
   /** crypto.subtle importKey/sign/verify/digest: compiles scr_webcrypto.c. */
   webcrypto?: boolean;
+  /** The zlib Brotli one-shot forms: compiles scr_brotli.c and links the
+   * vendored google/brotli archive (with the zlib unit, whose option
+   * helpers it shares). */
+  brotli?: boolean;
   /** perf_hooks event-loop metrics: compiles scr_perf_loop.c. */
   perfLoop?: boolean;
   /** Internal compiler hook: called only after a strict native artifact hit

@@ -956,8 +956,8 @@
       "apiEntries": 94,
       "static": {
         "supported": 0,
-        "partial": 52,
-        "refused": 12,
+        "partial": 60,
+        "refused": 4,
         "not-implemented": 30,
         "by-design": 0,
         "unreviewed": 0,
@@ -115448,7 +115448,13 @@
           "tests/corpus/5377-zlib-stream-backpressure.cjs",
           "tests/corpus/5378-zlib-sync-options.cjs",
           "tests/corpus/5379-zlib-callback-options.ts",
-          "tests/corpus/5415-zlib-dynamic-inputs.cjs"
+          "tests/corpus/5415-zlib-dynamic-inputs.cjs",
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
         ]
       },
       "anchorSource": "chapter"
@@ -116803,8 +116809,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliCompress"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliCompress",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -116826,8 +116840,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliCompressSync"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliCompressSync",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -116849,8 +116871,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompress"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliDecompress",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -116872,8 +116902,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompressSync"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliDecompressSync",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -117959,8 +117997,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliCompress"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliCompress",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "ancestor"
     },
@@ -117982,8 +118028,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliCompressSync"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliCompressSync",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "ancestor"
     },
@@ -118005,8 +118059,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompress"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliDecompress",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "ancestor"
     },
@@ -118028,8 +118090,16 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "evidence": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompressSync"
+        "status": "partial",
+        "evidence": "surface-manifest:node-builtin.zlib.brotliDecompressSync",
+        "tests": [
+          "tests/corpus/6740-zlib-brotli-sync.ts",
+          "tests/corpus/6741-zlib-brotli-callbacks.ts",
+          "tests/corpus/6742-zlib-brotli-params.ts",
+          "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+          "tests/corpus/6745-zlib-brotli-options.cjs",
+          "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+        ]
       },
       "anchorSource": "ancestor"
     },

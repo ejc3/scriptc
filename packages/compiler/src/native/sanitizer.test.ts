@@ -88,6 +88,7 @@ test.skipIf(process.platform !== "linux" && process.platform !== "darwin")(
               fileHandle: false,
               fetch: false,
               zlib: false,
+              brotli: false,
               assert: false,
               inspect: false,
               dynInvoke: false,

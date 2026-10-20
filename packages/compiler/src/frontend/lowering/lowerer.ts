@@ -9980,6 +9980,7 @@ export class Lowerer {
           builtinOption("SpawnOptions") ||
           builtinOption("UrlObject") ||
           builtinOption("URLFormatOptions") ||
+          builtinOption("BrotliOptions") ||
           !this.mapTypeOf(this.typeOf(x)) ||
           this.excessJsContextualProperty(x, parts)
         ) {

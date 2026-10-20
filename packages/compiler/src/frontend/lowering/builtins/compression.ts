@@ -336,6 +336,80 @@ const ZLIB_STREAM_FACTORIES: Readonly<Record<string, number | undefined>> = {
   createUnzip: 7,
 };
 
+/** The Brotli one-shot forms: whether each compresses and whether it takes a
+ * callback. */
+const BROTLI_ONE_SHOT: Record<string, { compress: boolean; callback: boolean } | undefined> = {
+  brotliCompressSync: { compress: true, callback: false },
+  brotliDecompressSync: { compress: false, callback: false },
+  brotliCompress: { compress: true, callback: true },
+  brotliDecompress: { compress: false, callback: true },
+};
+
+/** brotli{Compress,Decompress}Sync(data[, options]) and
+ * brotli{Compress,Decompress}(data[, options], callback): the runtime reads
+ * the options (Node's Brotli() and ZlibBase() ladder) before the input. */
+/** An options literal is built as a dynamic object, so `params` keys such as
+ * `{ [constants.BROTLI_PARAM_QUALITY]: 4 }` keep the shape the checker gives
+ * them instead of meeting the declared `params` index signature. */
+function brotliOptionsValue(
+  lowerer: Lowerer,
+  node: ts.Expression,
+  what: string,
+  loc: SrcLoc,
+): IrExpr {
+  let inner = node;
+  while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+  if (ts.isObjectLiteralExpression(inner)) return lowerer.lowerExprExpecting(node, DYN);
+  return zlibOptionsValue(lowerer, node, what, loc);
+}
+
+function lowerBrotliCall(
+  lowerer: Lowerer,
+  expr: ts.CallExpression,
+  member: string,
+  form: { compress: boolean; callback: boolean },
+  loc: SrcLoc,
+): IrExpr {
+  const args = expr.arguments.nodes;
+  const arity = form.callback ? [2, 3] : [1, 2];
+  if (!arity.includes(args.length)) {
+    lowerer.noLowering(
+      `${member} with ${args.length} arguments`,
+      expr,
+      form.callback
+        ? `${member}(data, callback) and ${member}(data, options, callback) are supported`
+        : undefined,
+    );
+  }
+  const input = zlibInput(lowerer, args[0]!, loc);
+  const withOptions = args.length === (form.callback ? 3 : 2);
+  const options = withOptions
+    ? brotliOptionsValue(lowerer, args[1]!, `zlib.${member}`, loc)
+    : dynUndefinedExpr(loc);
+  const compress = numLit(form.compress ? 1 : 0, loc);
+  if (!form.callback) {
+    return {
+      kind: "libCall",
+      fn: input.dyn ? "zlib.brotliSyncDyn" : "zlib.brotliSync",
+      args: [compress, input.value, options],
+      type: BYTES_U8,
+      loc,
+    };
+  }
+  return {
+    kind: "libCall",
+    fn: input.dyn ? "zlib.brotliCbDyn" : "zlib.brotliCb",
+    args: [
+      compress,
+      input.value,
+      options,
+      errorFirstBytesCallback(lowerer, args[withOptions ? 2 : 1]!, "zlib"),
+    ],
+    type: VOID,
+    loc,
+  };
+}
+
 export function lowerZlibModuleCall(
   lowerer: Lowerer,
   expr: ts.CallExpression,
@@ -356,6 +430,8 @@ export function lowerZlibModuleCall(
       loc,
     );
   }
+  const brotli = BROTLI_ONE_SHOT[bi.member];
+  if (brotli !== undefined) return lowerBrotliCall(lowerer, expr, bi.member, brotli, loc);
   const syncFn = ZLIB_SYNC_FNS[bi.member];
   if (syncFn !== undefined) {
     if (expr.arguments.nodes.length === 0 || expr.arguments.nodes.length > 2) {

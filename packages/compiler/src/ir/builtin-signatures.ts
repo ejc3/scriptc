@@ -3023,6 +3023,13 @@ export const LIB_FN_SIGS = defineLibFnSignatures({
   /** The checked-dynamic input twins (the JS lane's untyped data). */
   "zlib.syncOptsDyn": { argTypes: [F64, DYN, DYN], result: BYTES_U8 },
   "zlib.cbOptsDyn": { argTypes: [F64, DYN, DYN, null], result: VOID },
+  // brotliCompressSync / brotliDecompressSync and the callback forms:
+  // (compress, a literal 1 or 0 that picks the entry point, data,
+  // options[, callback]) over scr_brotli.c.
+  "zlib.brotliSync": { argTypes: [F64, BYTES_U8, DYN], result: BYTES_U8 },
+  "zlib.brotliSyncDyn": { argTypes: [F64, DYN, DYN], result: BYTES_U8 },
+  "zlib.brotliCb": { argTypes: [F64, BYTES_U8, DYN, null], result: VOID },
+  "zlib.brotliCbDyn": { argTypes: [F64, DYN, DYN, null], result: VOID },
   /** util.promisify over the callback one-shots: [mode, data, options]
    * like zlib.cbOpts → a promise the worker-pool run settles with the
    * Buffer or the callback form's Error. An options or input error rejects

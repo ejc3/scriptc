@@ -7,9 +7,9 @@
     "tierItemCount": 3454,
     "tiers": {
       "static": {
-        "audit-partial": 1197,
+        "audit-partial": 1205,
         "verify-gap": 2130,
-        "replace-refusal": 40,
+        "replace-refusal": 32,
         "classify": 2,
         "implement": 85
       }
@@ -87206,12 +87206,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliCompress",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliCompress",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },
@@ -87231,12 +87238,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliCompressSync",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliCompressSync",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },
@@ -87256,12 +87270,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompress",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliDecompress",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },
@@ -87281,12 +87302,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompressSync",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliDecompressSync",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },
@@ -88007,12 +88035,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliCompress",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliCompress",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },
@@ -88032,12 +88067,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliCompressSync",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliCompressSync",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },
@@ -88057,12 +88099,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompress",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliDecompress",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },
@@ -88082,12 +88131,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.zlib.brotliDecompressSync",
-          "tests": []
+          "source": "surface-manifest:node-builtin.zlib.brotliDecompressSync",
+          "tests": [
+            "tests/corpus/6740-zlib-brotli-sync.ts",
+            "tests/corpus/6741-zlib-brotli-callbacks.ts",
+            "tests/corpus/6742-zlib-brotli-params.ts",
+            "tests/corpus/6744-zlib-brotli-decode-errors.ts",
+            "tests/corpus/6745-zlib-brotli-options.cjs",
+            "tests/corpus/6748-zlib-brotli-dynamic-inputs.cjs"
+          ]
         }
       }
     },

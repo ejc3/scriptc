@@ -30,9 +30,9 @@ const raw = readFileSync("/etc/hosts").toString(tty ? "hex" : "latin1"); // runt
 const intervalWithSignal = promiseInterval(1, "tick", {}); // AbortSignal options stay fenced
 const sleepWithSignal = promiseSleep(1, "tick", { signal: AbortSignal.timeout(5) }); // resolve values and AbortSignal options lower
 // The computed encoding is now part of the static Buffer surface. The
-// one-shot zlib/raw/gzip codecs take Node's options, validated at run
-// time; Brotli remains an explicit member fence.
-import { brotliCompressSync, deflateSync } from "node:zlib";
+// one-shot zlib/raw/gzip/Brotli codecs take Node's options, validated at
+// run time; the Brotli streams remain an explicit member fence.
+import { createBrotliCompress, deflateSync } from "node:zlib";
 const packed = deflateSync("data", { level: 9, strategy: 1 }); // options lower
-const brotli = brotliCompressSync(Buffer.from("data")); // outside the lowered family: fenced
+const brotli = createBrotliCompress(); // outside the lowered family: fenced
 // The remaining imports continue the declared-but-not-lowered surface.

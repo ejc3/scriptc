@@ -18,8 +18,10 @@ import {
   QJS_COMMIT,
   MBEDTLS_VERSION,
   ZLIB_VERSION,
+  BROTLI_VERSION,
   LRE_SOURCES,
   ZLIB_SOURCES,
+  BROTLI_SOURCES,
 } from "./vendor-inputs.js";
 export {
   QJS_COMMIT,
@@ -418,9 +420,85 @@ export function createVendorArchives(context: VendorArchiveContext) {
     return archive;
   }
 
+  function vendorBrotliDir(): string {
+    return join(runtimeSrcDir(), "..", "vendor", "brotli");
+  }
+
+  function brotliArchivePath(
+    sanitize: boolean,
+    driver: CcDriver,
+    buildIdentity: string,
+    cacheRoot: string = vendorBuildCacheRoot(),
+  ): string {
+    const flavor = `${sanitize ? "asan" : "plain"}-${vendorCacheTargetFlavor(driver)}-${buildIdentity}`;
+    return join(cacheRoot, `brotli-${BROTLI_VERSION}-${flavor}`, "libbrotli.a");
+  }
+
+  /** The google/brotli archive for one flavor, compiled lazily on the first
+   * Brotli-using build and cached under
+   * <build-cache>/vendor/brotli-<version>-<flavor>-<target>-<toolchain>/libbrotli.a
+   * with the mbedTLS archive's recipe and atomic publish. Objects are named
+   * after their directory as well as their file (dec/ and enc/ both have a
+   * static_init.c). Plain is -O2: the codec's speed is the program's. */
+  async function ensureBrotliArchive(
+    sanitize: boolean,
+    driver: CcDriver,
+    buildIdentity: string,
+    cacheRoot: string = vendorBuildCacheRoot(),
+  ): Promise<string> {
+    const flavor = `${sanitize ? "asan" : "plain"}-${vendorCacheTargetFlavor(driver)}-${buildIdentity}`;
+    const compileArgv = isZigDriver(driver) ? driver.argv : ["clang"];
+    const arArgv = isZigDriver(driver) ? [...driver.argv.slice(0, 1), "ar"] : ["ar"];
+    const vendor = vendorBrotliDir();
+    const archive = brotliArchivePath(sanitize, driver, buildIdentity, cacheRoot);
+    if (await validVendorArtifact(archive)) return archive;
+
+    await mkdir(cacheRoot, { recursive: true });
+    const buildDir = await mkdtemp(join(tmpdir(), `scriptc-vendor-brotli-${flavor}-`));
+    try {
+      const objectOf = (src: string): string =>
+        join(buildDir, `${src.replace("/", "_").replace(/\.c$/, "")}.o`);
+      const cflags = [
+        "-std=c11",
+        ...driver.targetArgs,
+        ...(sanitize ? ["-O1", "-fsanitize=address"] : ["-O2"]),
+        "-I",
+        join(vendor, "include"),
+      ];
+      const width = availableParallelism();
+      for (let i = 0; i < BROTLI_SOURCES.length; i += width) {
+        await Promise.all(
+          BROTLI_SOURCES.slice(i, i + width).map((src) =>
+            execFileAsync(compileArgv[0] ?? "clang", [
+              ...compileArgv.slice(1),
+              ...cflags,
+              "-c",
+              join(vendor, src),
+              "-o",
+              objectOf(src),
+            ]),
+          ),
+        );
+      }
+      await execFileAsync(arArgv[0] ?? "ar", [
+        ...arArgv.slice(1),
+        "rcs",
+        join(buildDir, "libbrotli.a"),
+        ...BROTLI_SOURCES.map(objectOf),
+      ]);
+      await publishVendorArtifact(join(buildDir, "libbrotli.a"), archive);
+    } finally {
+      await rm(buildDir, { recursive: true, force: true });
+    }
+    return archive;
+  }
+
   return {
     vendorEngineDir,
     vendorTlsDir,
+    vendorBrotliDir,
+    brotliArchivePath,
+    ensureBrotliArchive,
     vendorBuildCacheRoot,
     vendorCacheTargetFlavor,
     vendorCacheBuildIdentity,

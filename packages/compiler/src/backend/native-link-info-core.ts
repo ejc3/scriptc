@@ -35,6 +35,9 @@ export interface NativeLinkFeatures {
    * or stdio 'resize' events: links the SCR_STDIO_EXTENDED events unit. */
   stdioExtended?: boolean;
   zlib: boolean;
+  /** The zlib Brotli one-shot forms: scr_brotli.c and the google/brotli
+   * archive. Absent (not false) for programs without them. */
+  brotli?: boolean;
   assert: boolean;
   inspect: boolean;
   dynInvoke: boolean;

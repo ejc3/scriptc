@@ -48,3 +48,13 @@ The objects build lazily on the first zlib-using cross compile into the per-user
 The TLS provider behind node:tls/node:https (see the design note atop packages/runtime/src/scr_tls.c for why mbedTLS over SecureTransport/BoringSSL/libtls). Only `include/` and `library/` are vendored (LICENSE beside them) — tests, docs, programs, scripts, and CMake machinery are not. No vendored file is modified and no custom config is applied (the stock `mbedtls_config.h` builds every `library/*.c` standalone with clang); to update, re-fetch the release tarball, copy the same two directories, and bump `MBEDTLS_VERSION` in packages/compiler/src/backend/vendor-archives.ts.
 
 The archive (libmbedtls.a) is prebuilt best-effort during npm installation (or explicitly by `scriptc cache warm`) and otherwise built lazily on the first TLS-using compile. It lives under the per-user build cache's `vendor/mbedtls-<version>-<flavor>-<target>-<toolchain>/` directory — one flavor per lane (plain, asan), native platform/architecture or explicit cross target, and compiler environment/identity, the libqjs.a pattern. TLS-free binaries never compile or link any of this.
+
+## brotli/
+
+- Project: https://github.com/google/brotli
+- Version: v1.2.0 (release tarball brotli-1.2.0.tar.gz, sha256 816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec), the version Node.js 24 bundles
+- License: MIT (see brotli/LICENSE)
+
+The codec behind node:zlib's Brotli functions (see packages/runtime/src/scr_brotli.c). Only the C library directories `common/`, `dec/`, `enc/` and `include/` are vendored, with LICENSE beside them. Tests, docs, tools, language bindings and build files are not. No vendored file is modified. `enc/static_init_lazy.cc` is removed: it is used only with `BROTLI_STATIC_INIT_LAZY`, and the default `BROTLI_STATIC_INIT_NONE` needs only the C sources. To update, re-fetch the release tarball, copy the same directories, remove the same file, and bump `BROTLI_VERSION` and `BROTLI_SOURCES` in packages/compiler/src/backend/vendor-inputs.ts.
+
+The archive (libbrotli.a) is built lazily on the first compile of a program that uses the Brotli functions, under the per-user build cache's `vendor/brotli-<version>-<flavor>-<target>-<toolchain>/` directory, the libmbedtls.a pattern. Runtime packs carry it as `libscriptc-brotli.a`. Programs that don't use Brotli never compile or link any of it.

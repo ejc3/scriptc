@@ -1,0 +1,6 @@
+{
+ "order": [
+  "<repo>/tests/corpus/6743-zlib-brotli-param-errors.cjs"
+ ],
+ "diags": []
+}

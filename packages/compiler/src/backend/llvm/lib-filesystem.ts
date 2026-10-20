@@ -173,6 +173,14 @@ function emitObjEntryPairs(host: LlvmEmitterContext, e: LibCallExpr): LlValue {
   return out;
 }
 
+/** The zlib.brotli* direction: lowering passes `compress` as a literal 1 or 0. */
+function brotliDirection(e: LibCallExpr): "compress" | "decompress" {
+  const compress = e.args[0];
+  if (compress?.kind !== "numLit")
+    throw new InternalCompilerError(`llvm emitter bug: ${e.fn} direction is not a literal`);
+  return compress.value !== 0 ? "compress" : "decompress";
+}
+
 export function emitFilesystemLibCall(host: LlvmEmitterContext, e: LibCallExpr): LlValue {
   const B = host.B;
   const alwaysThrowSym = FS_ALWAYS_THROW_SYMS[e.fn];
@@ -224,6 +232,40 @@ export function emitFilesystemLibCall(host: LlvmEmitterContext, e: LibCallExpr):
     const out = host.own({ name: t, type: e.type });
     host.emitPendingCheck();
     return out;
+  }
+  if (e.fn === "zlib.brotliSync" || e.fn === "zlib.brotliSyncDyn") {
+    // (compress, data, options): the direction literal picks the entry point,
+    // so a program links only the codecs it calls; data and options
+    // borrowed; +1 bytes or NULL with a pending throw.
+    const direction = brotliDirection(e);
+    const args = e.args.slice(1).map((a) => host.emitExpr(a));
+    const sym = `scr_brotli_${direction}_sync${e.fn === "zlib.brotliSync" ? "" : "_dyn"}`;
+    host.declare(`declare ptr @${sym}(ptr, ptr)`);
+    const t = B.tmp();
+    B.line(`${t} = call ptr @${sym}(ptr ${args[0]!.name}, ptr ${args[1]!.name})`);
+    const out = host.own({ name: t, type: e.type });
+    host.emitPendingCheck();
+    return out;
+  }
+  if (e.fn === "zlib.brotliCb" || e.fn === "zlib.brotliCbDyn") {
+    // (compress, data, options, callback): the options and the engine are set
+    // up before the submission (a pending throw); the callback moves into the
+    // operation.
+    host.usesTimers = true;
+    const direction = brotliDirection(e);
+    const args = e.args.slice(1).map((a) => host.emitExpr(a));
+    const cbT = e.args[3]!.type;
+    if (cbT.kind !== "func")
+      throw new InternalCompilerError("llvm emitter bug: zlib callback not a func");
+    host.toHeap(args[2]!);
+    const adapter = host.zlibBytesThunkFor(cbT);
+    const sym = `scr_brotli_${direction}_async${e.fn === "zlib.brotliCb" ? "" : "_dyn"}`;
+    host.declare(`declare void @${sym}(ptr, ptr, ptr, ptr)`);
+    B.line(
+      `call void @${sym}(ptr ${args[0]!.name}, ptr ${args[1]!.name}, ptr ${args[2]!.name}, ptr @${adapter})`,
+    );
+    host.emitPendingCheck();
+    return { name: "", type: e.type };
   }
   if (e.fn === "zlib.promise" || e.fn === "zlib.promiseDyn") {
     // (mode, data, options): data and options borrowed; the +1 promise

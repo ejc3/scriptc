@@ -65,6 +65,7 @@
 #include "scr_bytes.h"
 #include "scr_inspect.h"
 #include "scr_zlib.h"
+#include "scr_brotli.h"
 #include "scr_net.h"
 #include "scr_tls.h"
 #include "scr_http.h"

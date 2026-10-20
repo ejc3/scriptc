@@ -15,6 +15,7 @@ import { stableTestMemo } from "./session.js";
 import {
   LRE_SOURCES,
   ZLIB_SOURCES,
+  vendorBrotliDir,
   vendorEngineDir,
   vendorTlsDir,
   vendorZlibDir,
@@ -164,7 +165,7 @@ export function effectiveCompilerInvocationFingerprint(
  * hashes the resolved files. Runtime-local and vendored source/header bytes
  * have their own content/version identities; scanning every owned file for
  * angle includes closes the system-header gap in separately built QuickJS,
- * libregexp, mbedTLS, zlib, and Ryū translation units. */
+ * libregexp, mbedTLS, zlib, Brotli, and Ryū translation units. */
 export async function implicitDependencyProbeIncludes(rtDir: string): Promise<string[]> {
   const vendor = join(rtDir, "..", "vendor");
   const quickjsSources = new Set<string>(LRE_SOURCES);
@@ -184,6 +185,7 @@ export async function implicitDependencyProbeIncludes(rtDir: string): Promise<st
       false,
       (name) => name.endsWith(".h") || zlibSources.has(name),
     ),
+    nativeSourceFiles(join(vendor, "brotli"), true),
   ]);
   const includes = new Set<string>();
   for (const path of fileGroups.flat()) {
@@ -197,7 +199,7 @@ export async function implicitDependencyProbeIncludes(rtDir: string): Promise<st
 
 function implicitDependencyIncludeDirective(include: string): string {
   const targetCondition =
-    include === "<cpuid.h>" || include === "<immintrin.h>"
+    include === "<cpuid.h>" || include === "<immintrin.h>" || include === "<mmintrin.h>"
       ? " && (defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64))"
       : include === "<intrin.h>"
         ? " && defined(_WIN32)"
@@ -380,6 +382,8 @@ async function implicitToolchainFingerprintsFresh(
         join(vendorTlsDir(), "library"),
         "-I",
         vendorZlibDir(),
+        "-I",
+        join(vendorBrotliDir(), "include"),
         "-M",
       ];
       const [dependencyResults, linker, assembler, compilerInvocation] = await Promise.all([
