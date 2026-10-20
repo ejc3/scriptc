@@ -9,3 +9,7 @@ console.log(format("a"), format.shout("b"), format.version, typeof format.shout)
 console.log(quote("c"), quote.whisper("D"), quote.kind, typeof quote.whisper);
 const { shout } = require("./plain.cjs");
 console.log(shout === format.shout);
+// Members another module writes through its own require of the export.
+const counted = require("./counted.cjs");
+require("./writer.cjs");
+console.log(counted.total, counted.label, counted.unit, counted());

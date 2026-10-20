@@ -2103,6 +2103,10 @@ export class Lowerer {
   /** Per CommonJS file using top-level `this`: the global holding the
    * object that stands for its original exports (lowerCjsTopLevelThis). */
   readonly cjsExportsThis = new Map<ts.SourceFile, IrGlobal>();
+  /** Per CommonJS module whose whole export is a function: the member
+   * names program code may write on that value through a require of the
+   * module, or "any" (cjs-exports-object.ts, wholeExportWrites). */
+  readonly cjsWholeExportWrites = new Map<ts.SourceFile, ReadonlySet<string> | "any">();
   /** Inline program-module require calls whose %init the enclosing member
    * read or member call is already sequencing (cjs-inline-require.ts). */
   readonly inlineRequireInitDone = new Set<ts.CallExpression>();
