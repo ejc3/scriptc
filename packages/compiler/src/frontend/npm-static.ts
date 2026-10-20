@@ -456,8 +456,7 @@ export function npmStaticFsShadow(services: FrontendServices): NpmStaticFsShadow
           const aliased = original === null ? null : services.builtinAliasRequires(original, path);
           if (aliased !== null) original = aliased;
           // tsc's interop helpers around builtin modules.
-          const tscHelpers =
-            original === null ? null : services.tscBuiltinImports(original, path);
+          const tscHelpers = original === null ? null : services.tscBuiltinImports(original, path);
           if (tscHelpers !== null) original = tscHelpers;
           // Minified merged declarations of requires and the bindings read
           // from them become one declaration per binding.

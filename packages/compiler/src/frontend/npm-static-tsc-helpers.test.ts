@@ -34,7 +34,8 @@ function expectSameBehavior(source: string): string {
   dirs.push(dir);
   writeFileSync(join(dir, "original.cjs"), source);
   writeFileSync(join(dir, "rewritten.cjs"), result!);
-  const run = (file: string) => spawnSync(process.execPath, [join(dir, file)], { encoding: "utf8" });
+  const run = (file: string) =>
+    spawnSync(process.execPath, [join(dir, file)], { encoding: "utf8" });
   const oracle = run("original.cjs");
   expect(oracle.status).toBe(0);
   expect(run("rewritten.cjs").stdout).toBe(oracle.stdout);
@@ -54,9 +55,17 @@ console.log(new Bus() instanceof events_1.default, path.basename("/a/b.txt"), ty
 
 test("other references, program modules and default reads of a namespace keep their text", () => {
   // The binding itself as a value.
-  expect(rewrite(`${helpers}const events_1 = __importDefault(require("events"));\nconsole.log(events_1);\n`)).toBeNull();
+  expect(
+    rewrite(
+      `${helpers}const events_1 = __importDefault(require("events"));\nconsole.log(events_1);\n`,
+    ),
+  ).toBeNull();
   // A program module (cjs-tsc-interop.ts owns it).
-  expect(rewrite(`${helpers}const m = __importDefault(require("./m"));\nm.default();\n`)).toBeNull();
+  expect(
+    rewrite(`${helpers}const m = __importDefault(require("./m"));\nm.default();\n`),
+  ).toBeNull();
   // `ns.default` reads the namespace copy's own default.
-  expect(rewrite(`${helpers}const p = __importStar(require("path"));\nconsole.log(p.default === p);\n`)).toBeNull();
+  expect(
+    rewrite(`${helpers}const p = __importStar(require("path"));\nconsole.log(p.default === p);\n`),
+  ).toBeNull();
 });

@@ -78,9 +78,6 @@ function interopReferences(
   return ok ? defaults : null;
 }
 
-
-
-
 /** The module text with its builtin interop bindings unwrapped, or null. */
 export function unwrapTscBuiltinImports(sf: ts.SourceFile): string | null {
   if (ts.isExternalModule(sf) && !sf.fileName.endsWith(".cjs")) return null;
