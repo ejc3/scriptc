@@ -85,6 +85,9 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "bytes.constructor",
   "bytes.instanceOf",
   "buffer.byteLenDyn",
+  "buffer.byteLenValue",
+  "buffer.allocValue",
+  "fs.realpathValue",
   "bytes.construct",
   "arrayBuffer.new",
   "arrayBuffer.newOptions",
@@ -454,6 +457,7 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   // The caller's lookup runs synchronously inside the connect call — a
   // throw there propagates like Node's.
   "net.connectLookup",
+  "net.connectLookupDyn",
   "cp.execSync",
   "cp.execCapture",
   // The client request constructors validate the method token

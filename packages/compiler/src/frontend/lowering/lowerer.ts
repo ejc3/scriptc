@@ -139,6 +139,7 @@ import { earlyReadVarSymbols } from "./var-hoisting.js";
 import { recordTextCodecClass } from "../../ir/ir.js";
 import { assignLegacyTiers, type DynamicFunction } from "../../ir/tiers.js";
 import { promoteJsvals } from "../../ir/jsval.js";
+import { fallbackTainted, type FallbackSite, type FallbackTaint } from "./checked-fallback.js";
 import {
   analyzeTiers,
   dynamicStatementCount,
@@ -170,6 +171,7 @@ import { resolve } from "node:path";
 import { bindingSource } from "../binding-source.js";
 import { tsgoPath } from "../dts-paths.js";
 import * as ts from "../ts7/adapter.js";
+import { isBundledShimForwarder } from "../package-shims.js";
 import { erasedTypeOnlyImport } from "../type-only-imports.js";
 import { literalValues } from "../literal-values.js";
 import { discriminantOwners, literalUnionArm, type UnionLiteral } from "../union-discriminants.js";
@@ -254,6 +256,7 @@ import {
   requireSpecOf,
   resolveImport,
   workspacePackageOfPath,
+  type CycleEdge,
 } from "../program.js";
 import {
   containsRecord,
@@ -811,6 +814,8 @@ export interface LowerOptions {
   startupCrash?: StartupCrash | null;
   /** LoadResult.inlineRequireCycleCalls. */
   inlineRequireCycleCalls?: ReadonlySet<ts.Node> | undefined;
+  /** LoadResult.moduleEdges. */
+  moduleEdges?: ReadonlyMap<ts.SourceFile, readonly CycleEdge[]> | undefined;
   /** LIBRARY mode's reachability roots: the profile-mapped exports of the
    * entry module. Executable builds root at the entry's top level alone
    * (an unreferenced export dead-strips); a library's exports are called from
@@ -1008,11 +1013,15 @@ export function lowerToIr(
       ),
     );
   };
+  // Inline require() calls closing a cycle inside the appended subgraphs
+  // join preflight's set (the same run-time refusal by name).
+  const inlineRequireCycleCalls = new Set<ts.Node>(options.inlineRequireCycleCalls ?? []);
+  const graph = { edges: options.moduleEdges, inlineCycleCalls: inlineRequireCycleCalls };
   for (let pass = 0; pass < 32; pass++) {
     const before = moduleOrder.length;
-    appendDynamicImportModules(program, moduleOrder, onExtraCycle);
-    appendForkModules(program, moduleOrder, forkTargets, onExtraCycle);
-    appendWorkerModules(program, moduleOrder, workerTargets, onExtraCycle);
+    appendDynamicImportModules(program, moduleOrder, onExtraCycle, graph);
+    appendForkModules(program, moduleOrder, forkTargets, onExtraCycle, graph);
+    appendWorkerModules(program, moduleOrder, workerTargets, onExtraCycle, graph);
     if (moduleOrder.length === before) break;
     if (pass === 31) throw new Error("dynamic import and fork module discovery did not converge");
   }
@@ -1027,7 +1036,7 @@ export function lowerToIr(
     projectCheckJs: options.projectCheckJs ?? false,
     targetPlatform,
     startupCrash,
-    inlineRequireCycleCalls: options.inlineRequireCycleCalls,
+    inlineRequireCycleCalls,
     ffiImports,
     libraryCallbacks,
     forkTargets,
@@ -1051,7 +1060,7 @@ export function lowerToIr(
           projectCheckJs: options.projectCheckJs ?? false,
           targetPlatform,
           startupCrash,
-          inlineRequireCycleCalls: options.inlineRequireCycleCalls,
+          inlineRequireCycleCalls,
           ffiImports,
           libraryCallbacks,
           forkTargets,
@@ -1083,7 +1092,7 @@ export function lowerToIr(
       projectCheckJs: options.projectCheckJs ?? false,
       targetPlatform,
       startupCrash,
-      inlineRequireCycleCalls: options.inlineRequireCycleCalls,
+      inlineRequireCycleCalls,
       ffiImports,
       libraryCallbacks,
       forkTargets,
@@ -1127,7 +1136,7 @@ export function lowerToIr(
       reachable,
       targetPlatform,
       startupCrash,
-      inlineRequireCycleCalls: options.inlineRequireCycleCalls,
+      inlineRequireCycleCalls,
       ffiImports,
       libraryCallbacks,
       forkTargets,
@@ -1224,7 +1233,7 @@ export function lowerToIr(
       reachable,
       remainder: true,
       alreadyFlushed: resultLowerer.flushedSymbols,
-      inlineRequireCycleCalls: options.inlineRequireCycleCalls,
+      inlineRequireCycleCalls,
       targetPlatform,
       ffiImports,
       libraryCallbacks,
@@ -1842,6 +1851,9 @@ export class Lowerer {
    * NaN, which lower to plain doubles (see nan-coded-reads.ts). Settled by
    * analyzeRuntimeOptionalArrayReads before any body lowers. */
   nanCodedReads: NanCodedReads | null = null;
+  /** Whether any implementation source spells `versions`
+   * (programMentionsVersions in builtins/process.ts). */
+  mentionsProcessVersions: boolean | undefined = undefined;
   private stringIndexBoundsCache: StringIndexBounds | null = null;
   /** Proofs that a string element read names an existing code unit. The
    * indexed-read analysis and expression lowering share one instance, so a
@@ -2085,6 +2097,9 @@ export class Lowerer {
    * setEncoding call whose receiver is a socket or an untyped value.
    * Computed once on first use (null until then). */
   socketEncodingReachable: boolean | null = null;
+  /** Lambdas lowered with checked-dynamic parameters (lambdaSignature):
+   * callbacks whose arguments are wider than their contextual overload. */
+  readonly dynParamLambdas = new Set<ts.Node>();
   /** Whether some server in this program may listen on a Unix socket: a
    * listen call whose first argument is a string. Computed once on first
    * use (null until then); address() answers the path only when true. */
@@ -2223,6 +2238,10 @@ export class Lowerer {
   runtimeOptionalBindingType(node: ts.Node): IrType | null;
   runtimeOptionalBindingType(node: ts.Node, fallback: IrType): IrType;
   runtimeOptionalBindingType(node: ts.Node, fallback?: IrType): IrType | null {
+    // A binding holding a failed checked value is dynamic: undefined is one
+    // of its values already (checked-fallback.ts).
+    if (this.fallbackTaint !== null && ts.isIdentifier(node) && fallbackTainted(this, node))
+      return fallback ?? null;
     const patternType = this.runtimeOptionalPatternTypes.get(node);
     if (patternType) return patternType;
     const symbol = ts.isIdentifier(node)
@@ -2622,6 +2641,14 @@ export class Lowerer {
   /** True while re-lowering a base function's 2nd+ instance: the same source
    * statements were already counted for the first instance. */
   suppressStats = false;
+  /** Checked-cast fallback (checked-fallback.ts): sites opened by their
+   * root's declaration, by root; armed sites whose tails have not split
+   * yet; the taint of the dynamic tail being lowered; and the number of
+   * splits whose tails are being lowered (each lowers its tail twice). */
+  fallbackSites = new Map<ts.Symbol, FallbackSite>();
+  fallbackArmed: FallbackSite[] = [];
+  fallbackTaint: FallbackTaint | null = null;
+  fallbackSplitDepth = 0;
   /** Comparisons interned by operand representations and equality semantics. */
   readonly equalityHelpers = new Map<string, string>();
   /** Synthetic array-HOF loop functions (map/filter/forEach desugar),
@@ -7935,10 +7962,14 @@ export class Lowerer {
   ): IrStmt & { kind: "runtimeFence" } {
     const loc = locOf(node);
     const code = first?.code ?? fallback?.code ?? "SC1090";
-    const baseMessage =
+    const plainMessage =
       first?.message ??
       fallback?.message ??
       "this statement uses a construct with no static lowering";
+    const baseMessage =
+      this.fallbackTaint !== null
+        ? `a value that failed its checked cast reached code with no dynamic lowering: ${plainMessage}`
+        : plainMessage;
     const messageLoc = first?.loc ?? loc;
     const source = first
       ? (this.program.getSourceFile(messageLoc.file) ?? ts.getSourceFileOfNode(node))
@@ -8246,6 +8277,9 @@ export class Lowerer {
   }
 
   stdlibMemberFence(access: ts.PropertyAccessExpression): void {
+    // A member of a failed checked value reads dynamically, whatever the
+    // static member resolves to (checked-fallback.ts).
+    if (this.fallbackTaint !== null && fallbackTainted(this, access.expression)) return;
     return stdlibMemberFence(this, access);
   }
 
@@ -8295,6 +8329,10 @@ export class Lowerer {
   }
 
   typeOf(node: ts.Node): ts.Type {
+    // The dynamic lowering of a checked-cast fallback tail reads values
+    // derived from the failed value as `any`.
+    if (this.fallbackTaint !== null && fallbackTainted(this, node))
+      return this.checker.getAnyType();
     if (ts.isPropertyAccessExpression(node) && isJsSourceFile(ts.getSourceFileOfNode(node))) {
       const receiver =
         node.expression.kind === ts.SyntaxKind.ThisKeyword && this.fnStack.length > 0
@@ -11969,13 +12007,16 @@ export class Lowerer {
   readonly isNpmFile = (sf: ts.SourceFile): boolean =>
     sf.isDeclarationFile &&
     (sf.fileName.includes("/node_modules/") || workspacePackageOfPath(sf.fileName) !== null) &&
-    !this.isStdlibFile(sf);
+    !this.isStdlibFile(sf) &&
+    // A bundled copy's forwarder to a package shim types compiled code.
+    !isBundledShimForwarder(sf.fileName);
 
   npmPackageOf(type: ts.Type): string | null {
     return npmPackageOf(this, type);
   }
 
   npmMemberFence(access: ts.PropertyAccessExpression): void {
+    if (this.fallbackTaint !== null && fallbackTainted(this, access.expression)) return;
     return npmMemberFence(this, access);
   }
 
@@ -12965,6 +13006,8 @@ export class Lowerer {
         loc,
       };
     }
+    if (bi.module === "fs" && (bi.member === "realpathSync" || bi.member === "realpathSync.native"))
+      return fsRealpathValue(this, bi.member === "realpathSync.native", loc);
     const fn = builtinModuleFnOf(this, bi.module, bi.member);
     return fn ? this.lowerNativeCallableValue(fn, `${bi.module}.${bi.member}`, loc) : null;
   }
@@ -13676,4 +13719,52 @@ function droppedMembers(lowerer: Lowerer, from: IrType, to: IrType, seen: Set<st
     else out.push(...droppedMembers(lowerer, f.type, t.type, seen).map((n) => `${f.name}.${n}`));
   }
   return out;
+}
+
+/** fs.realpathSync and its .native as function values (fs.realpath stores
+ * `var origRealpathSync = fs.realpathSync`): path and options pass through
+ * unchecked to the runtime, which applies Node's argument handling. */
+function fsRealpathValue(lowerer: Lowerer, native: boolean, loc: SrcLoc): IrExpr {
+  const name = native ? "%builtin.fs.realpathSync.native" : "%builtin.fs.realpathSync";
+  if (!lowerer.builtinCallableValueFns.has(name)) {
+    lowerer.builtinCallableValueFns.set(name, name);
+    const params = ["path", "options"].map((id) => ({ localId: id, name: id, type: DYN }));
+    lowerer.liftedFns.push({
+      name,
+      params,
+      returnType: DYN,
+      locals: params.map((p) => ({ id: p.localId, name: p.name, type: DYN, mutable: false })),
+      loc,
+      body: [
+        {
+          kind: "return",
+          value: {
+            kind: "libCall",
+            fn: "fs.realpathValue",
+            args: [
+              { kind: "varRef", localId: "path", type: DYN, loc },
+              { kind: "varRef", localId: "options", type: DYN, loc },
+              { kind: "boolLit", value: native, type: BOOL, loc },
+            ],
+            type: DYN,
+            loc,
+          },
+          loc,
+        },
+      ],
+    });
+  }
+  return {
+    kind: "dynFrom",
+    value: {
+      kind: "closure",
+      fnName: name,
+      captures: [],
+      type: { kind: "func", params: [DYN, DYN], ret: DYN },
+      loc,
+    },
+    fnName: native ? "native" : "realpathSync",
+    type: DYN,
+    loc,
+  };
 }

@@ -375,6 +375,7 @@ export const LIB_FN_SYMS: Record<string, string> = {
   "fsp.globStrings": "scr_fsp_glob_strings",
   "fsp.globError": "scr_fsp_glob_error",
   "fs.realpathSync": "scr_fs_realpath",
+  "fs.realpathValue": "scr_fs_realpath_value",
   "fs.realpathNativeSync": "scr_fs_realpath_promise",
   "fs.unlinkSync": "scr_fs_unlink",
   "fs.chmodSync": "scr_fs_chmod",
@@ -438,6 +439,7 @@ export const LIB_FN_SYMS: Record<string, string> = {
   "buffer.concatDyn": "scr_buffer_concat_dyn",
   "buffer.concatLenDyn": "scr_buffer_concat_len_dyn",
   "buffer.alloc": "scr_buffer_alloc",
+  "buffer.allocValue": "scr_buffer_alloc_value",
   "buffer.allocUnsafe": "scr_buffer_alloc_unsafe",
   "buffer.allocUnsafeSlow": "scr_buffer_alloc_unsafe_slow",
   "buffer.poolFromStr": "scr_buffer_from_str",
@@ -449,6 +451,7 @@ export const LIB_FN_SYMS: Record<string, string> = {
   "buffer.poolSize": "scr_buffer_pool_size",
   "buffer.setPoolSize": "scr_buffer_set_pool_size",
   "buffer.byteLenDyn": "scr_buffer_byte_length_dyn",
+  "buffer.byteLenValue": "scr_buffer_byte_length_value",
   "buffer.byteLenStr": "scr_bytes_byte_length_str",
   "buffer.isEncoding": "scr_bytes_is_encoding",
   // The checked-dynamic compare/equals validators (scr_bytes_io.c):
@@ -474,6 +477,7 @@ export const LIB_FN_SYMS: Record<string, string> = {
   "fs.existsChk": "scr_fs_exists_async",
   "fs.mkdtempSyncChk": "scr_fs_mkdtemp_sync_chk",
   "net.connectAttempt": "scr_net_connect_attempt",
+  "net.connectLookupDyn": "scr_net_connect_lookup_dyn",
   "fs.lchmodSyncChk": "scr_fs_lchmod_sync_chk",
   "fsp.lchmodChk": "scr_fsp_lchmod_chk",
   "fs.readFileSyncBuf": "scr_fs_read_file_bytes",
@@ -645,6 +649,9 @@ export const LIB_FN_SYMS: Record<string, string> = {
   "insp.circular": "scr_insp_circular",
   // Undeclared source properties kept beside a checked record (scr_json.c).
   "record.sourceHas": "scr_record_source_has",
+  // Checked-cast fallback reads (scr_json.c); take answers +1.
+  "checkedCast.fallbackTaken": "scr_dyn_check_fallback_taken",
+  "checkedCast.fallbackTake": "scr_dyn_check_fallback_take",
   // WHATWG URL + URLSearchParams (scr_url.c / scr_url_params.c):
   // constructions +1; url.new, the fileURLToPath pair, the win32
   // pathToFileURL flavor, and sp.fromPairs throw catchably (may-throw).
@@ -1690,6 +1697,7 @@ export const USES_TIMERS_LIB_FNS = new Set<string>([
   "net.connect",
   "net.connectCb",
   "net.connectLookup",
+  "net.connectLookupDyn",
   "net.connectAttempt",
   "fs.existsChk",
   "fs.callbackValue",

@@ -8,6 +8,7 @@ import {
 } from "./constructor-returns.js";
 import { checkedIterableSpread } from "./checked-iterable-spread.js";
 import { lowerReadlineUiNew } from "./builtins/readline.js";
+import { builtinMemberRequireDecl } from "./builtins/module-bindings.js";
 import { checkedClassUnionAssertion } from "./class-assertions.js";
 import { collectClassMethodMutations } from "./class-method-mutations.js";
 import { InternalCompilerError } from "../../errors.js";
@@ -1036,11 +1037,16 @@ export function builtinStreamInfoOf(
     // member to the stdlib class symbol. The declaration itself is
     // alias plumbing (streamClassAliasDecl — both declaration walks
     // skip it).
+    // A `var`/`let` binding of the inline require member
+    // (`var Transform = require("stream").Transform`) is the same alias
+    // plumbing as builtinMemberRequireDecl's: its declaration owns no
+    // storage either way.
     const decl = symbol.valueDeclaration;
     if (
       decl &&
       ts.isVariableDeclaration(decl) &&
-      (ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0 &&
+      ((ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0 ||
+        builtinMemberRequireDecl(decl.name, decl.initializer)) &&
       decl.initializer !== undefined &&
       ts.isPropertyAccessExpression(decl.initializer) &&
       !decl.initializer.questionDotToken &&
@@ -1399,7 +1405,8 @@ export function builtinEmitterInfoOf(
     if (
       decl !== undefined &&
       ts.isVariableDeclaration(decl) &&
-      (ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0 &&
+      ((ts.getCombinedNodeFlags(decl) & ts.NodeFlags.Const) !== 0 ||
+        builtinMemberRequireDecl(decl.name, decl.initializer)) &&
       decl.initializer !== undefined &&
       ts.isPropertyAccessExpression(decl.initializer) &&
       !decl.initializer.questionDotToken &&
@@ -6770,14 +6777,22 @@ function thunkAsyncSlot(
 ): void {
   if (overridden.sig.async !== true) return;
   const declarer = overridden.declarer;
+  // The slot answers the body's promise: an untyped async method's `dyn`
+  // result is the promise's payload, so the slot's ABI is that promise. An
+  // async generator method's slot keeps its generator object.
+  const ret: IrType =
+    overridden.sig.gen || overridden.sig.ret.kind === "promise"
+      ? overridden.sig.ret
+      : { kind: "promise", inner: overridden.sig.ret };
   declarer.returnAdapters ??= new Map();
   if (!declarer.returnAdapters.has(mName)) {
     declarer.returnAdapters.set(mName, {
       params: [...overridden.sig.params],
-      ret: overridden.sig.ret,
+      ret,
       async: true,
     });
   }
+  overridden.sig.ret = ret;
   delete overridden.sig.async;
 }
 

@@ -1,3 +1,10 @@
+import {
+  armFallbackSite,
+  fallbackSplitsAt,
+  fallbackTainted,
+  lowerFallbackTail,
+  openFallbackSite,
+} from "./checked-fallback.js";
 import { lowerTupleAliasDecl, stripTypeWrappers } from "./typed-arguments.js";
 import { declaredMemberOf } from "./expressions/property-access.js";
 import { hostsAll } from "./expressions/hosted-narrowing.js";
@@ -8,7 +15,8 @@ import {
   storedMatchAllRowsReadByElements,
 } from "./containers/match-row-uses.js";
 import { viewIterationCheck } from "./containers/bytes.js";
-import { dynUndefinedExpr, numLit, varRef } from "../../ir/build.js";
+import { dynUndefinedExpr, nodeThrowExpr, numLit, varRef } from "../../ir/build.js";
+import { declaresHoistedBinding, staticCondition } from "./static-typeof.js";
 import { lowerCollectionSpread } from "./containers/collection-methods.js";
 import { lowerEventObjectPropertyWrite } from "./lower-event-target.js";
 import { lowerDynObjectLiteral } from "./expressions/object-literals.js";
@@ -687,7 +695,10 @@ export function lowerStmts(lowerer: Lowerer, stmts: readonly ts.Statement[]): Ir
   // position — instead of failing the whole build). TypeScript keeps
   // compile fences. ICEs (SC9001) always stay compile errors.
   const sf = stmts.length === 0 ? undefined : ts.getSourceFileOfNode(stmts[0]!);
-  const deferFences = sf !== undefined && isJsSourceFile(sf);
+  // The dynamic lowering of a checked-cast fallback tail fences like
+  // JavaScript: a statement with no `any` lowering throws when a failed
+  // value reaches it (checked-fallback.ts).
+  const deferFences = sf !== undefined && (isJsSourceFile(sf) || lowerer.fallbackTaint !== null);
   // Register this list as open for the forward-capture machinery: a
   // nested function lowering mid-list may pre-declare a LATER const of
   // this list as a TDZ box (predeclareForwardCapture), pushing the
@@ -734,6 +745,7 @@ export function lowerStmts(lowerer: Lowerer, stmts: readonly ts.Statement[]): Ir
           lowered = accounting;
           appended = true;
         } else {
+          openFallbackSite(lowerer, stmt, out);
           lowered = lowerer.lowerStmt(stmt);
         }
         // The lib-boundary chokepoint (lib-boundary.ts): checked-dynamic
@@ -748,7 +760,16 @@ export function lowerStmts(lowerer: Lowerer, stmts: readonly ts.Statement[]): Ir
           else body.push(lowered);
           const rewritten = lowerSurplusCalls(lowerer, body);
           enforceLibBoundary(lowerer, rewritten);
+          armFallbackSite(lowerer, stmt, rewritten);
           if (!appended) out.push(...rewritten);
+        }
+        // A checked-cast fallback site's tail starts after this
+        // statement: the rest of the list lowers statically and
+        // dynamically, selected by the site's flag.
+        const splits = fallbackSplitsAt(lowerer, stmt);
+        if (splits.length > 0) {
+          out.push(...lowerFallbackTail(lowerer, stmts.slice(i + 1), splits));
+          break;
         }
         // A JS statement that lowered CLEAN can still have flushed
         // DEFERRED collection diagnostics (a symbol lookup on an alias
@@ -1527,6 +1548,20 @@ export function lowerStmt(lowerer: Lowerer, stmt: ts.Statement): IrStmt | IrStmt
   }
   if (ts.isIfStatement(stmt)) {
     const cond = lowerer.lowerCondition(stmt.expression);
+    // A global-detection condition (static-typeof.ts) folds; its untaken
+    // arm is code Node never runs and does not lower, unless it declares a
+    // hoisted binding.
+    const decided = staticCondition(lowerer, stmt.expression);
+    if (decided !== null) {
+      const taken = decided ? stmt.thenStatement : stmt.elseStatement;
+      const untaken = decided ? stmt.elseStatement : stmt.thenStatement;
+      if (untaken === undefined || !declaresHoistedBinding(untaken)) {
+        const arm = taken === undefined ? [] : lowerer.lowerScopedBlock(taken);
+        return decided
+          ? { kind: "if", cond, then: arm, else_: null, loc: locOf(stmt) }
+          : { kind: "if", cond, then: [], else_: arm, loc: locOf(stmt) };
+      }
+    }
     // Aliased-typeof narrows (ms's `var type = typeof val` guard): the
     // then-branch lowers under what a TRUE condition proves, the
     // else-branch under a FALSE one — the var/let alias narrowing the
@@ -6931,6 +6966,36 @@ export function lowerExprStatement(lowerer: Lowerer, expr: ts.Expression): IrStm
     );
     return { kind: "if", cond, then, else_, loc: locOf(expr) };
   }
+  // A property write to a failed checked value in a fallback tail writes
+  // the dynamic object (checked-fallback.ts).
+  if (
+    lowerer.fallbackTaint !== null &&
+    ts.isBinaryExpression(expr) &&
+    expr.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isPropertyAccessExpression(expr.left) &&
+    !expr.left.questionDotToken &&
+    fallbackTainted(lowerer, expr.left.expression)
+  ) {
+    const loc = locOf(expr);
+    const recv = lowerer.lowerExpr(expr.left.expression);
+    if (recv.type.kind === "dyn") {
+      return {
+        kind: "exprStmt",
+        expr: {
+          kind: "libCall",
+          fn: "dyn.keySet",
+          args: [
+            recv,
+            { kind: "strLit", value: expr.left.name.text, type: STRING, loc },
+            lowerer.lowerExprExpecting(expr.right, DYN),
+          ],
+          type: VOID,
+          loc,
+        },
+        loc,
+      };
+    }
+  }
   // Assignment statements over the no-storage binding families:
   //   - `f1 = f2` where the RHS roots at an ambient-undefined name:
   //     Node evaluates the RHS first and dies on the root's
@@ -7051,16 +7116,12 @@ export function lowerExprStatement(lowerer: Lowerer, expr: ts.Expression): IrStm
       if (!isRelativeSpecifier(spec) && canonicalBuiltinModule(spec) === null) {
         const refusal = probeNodeRequireRefusal(sf.fileName, spec);
         if (refusal !== null) {
+          // The same throw as the expression form (cjs-inline-require):
+          // an Error carrying Node's MODULE_NOT_FOUND code.
           const loc = locOf(expr);
           return {
-            kind: "throw",
-            value: {
-              kind: "libCall",
-              fn: "error.new",
-              args: [{ kind: "strLit", value: refusal.message, type: STRING, loc }],
-              type: { kind: "object", className: "%Error" },
-              loc,
-            },
+            kind: "exprStmt",
+            expr: nodeThrowExpr(0, "MODULE_NOT_FOUND", refusal.message, VOID, loc),
             loc,
           };
         }
@@ -11475,18 +11536,23 @@ export function lowerForStatement(lowerer: Lowerer, stmt: ts.ForStatement): IrSt
   }
 }
 
-/** safe-buffer's `var Buffer = buffer.Buffer` at file scope: a `var` alias
- * of the global Buffer is the same alias plumbing as the const spelling
- * when nothing reassigns it and no code that runs before the declaration
- * can read it (the require-binding early-reference analysis), so the
- * hoisted undefined is unobservable. */
+/** safe-buffer's `var Buffer = buffer.Buffer` (or `var pna = process`, the
+ * process-nextick-args binding once it compiles as process) at file scope:
+ * a `var` alias of a surfaced global other than the global object itself
+ * is the same alias plumbing as the const spelling when nothing reassigns
+ * it and no code that runs before the declaration can read it (the
+ * require-binding early-reference analysis), so the hoisted undefined is
+ * unobservable. */
 export function stdlibBufferVarAlias(lowerer: Lowerer, decl: ts.VariableDeclaration): boolean {
   if (
     !ts.isIdentifier(decl.name) ||
     !ts.isVariableDeclarationList(decl.parent) ||
     (decl.parent.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) !== 0 ||
     decl.initializer === undefined ||
-    !bufferNamespaceMember(lowerer, decl.initializer)
+    !(
+      bufferNamespaceMember(lowerer, decl.initializer) ||
+      (stdlibGlobalAliasNameOf(lowerer, decl.initializer) ?? "globalThis") !== "globalThis"
+    )
   )
     return false;
   const symbol = lowerer.checker.getSymbolAtLocation(decl.name);
