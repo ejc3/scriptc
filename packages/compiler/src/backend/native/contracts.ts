@@ -124,6 +124,9 @@ export interface CcOptions {
   dynBufferNum?: boolean;
   /** Builtin functions read as values: compiles scr_builtin_values.c. */
   builtinValues?: boolean;
+  /** Buffer and typed-array members called or read on dyn values:
+   * compiles scr_dyn_bytes_method.c. */
+  dynBytes?: boolean;
   /** The program constructs EventTarget/Event/CustomEvent values or
    * calls events.addAbortListener (the event.* libCalls), or uses the
    * native fetch AbortSignal built on the same engine: compiles
@@ -308,6 +311,8 @@ export interface LibArchiveOptions {
   dynInvoke?: boolean;
   /** See CompileOptions.dynTier: the scr_js_* units. */
   dynTier?: boolean;
+  /** See CompileOptions.dynBytes: scr_dyn_bytes_method.c. */
+  dynBytes?: boolean;
   regex?: boolean;
   assert?: boolean;
   inspect?: boolean;

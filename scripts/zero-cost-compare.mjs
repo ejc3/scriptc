@@ -356,6 +356,7 @@ export const DYNAMIC_TIER_PREFIXES = [
   "scr_dyn_call",
   "scr_dyn_apply",
   "scr_dyn_invoke",
+  "scr_dyn_bytes_method",
   "scr_dyn_construct",
   "scr_dyn_function_apply",
   "scr_dyn_fn_get",

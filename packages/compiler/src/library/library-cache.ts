@@ -64,6 +64,7 @@ export interface EarlyLibraryNativeFeatures {
   backend: "llvm";
   dynInvoke: boolean;
   dynTier?: boolean;
+  dynBytes?: boolean;
   regex: boolean;
   assert: boolean;
   inspect: boolean;

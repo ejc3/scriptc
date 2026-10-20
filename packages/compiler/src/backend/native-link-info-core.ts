@@ -55,6 +55,9 @@ export interface NativeLinkFeatures {
   /** Builtin functions read as values (Buffer.byteLength, Buffer.alloc,
    * fs.realpathSync) link scr_builtin_values.c; absent (false) otherwise. */
   builtinValues?: boolean;
+  /** Buffer and typed-array members on dyn values:
+   * scr_dyn_bytes_method.c. Absent (not false) for programs without them. */
+  dynBytes?: boolean;
   events: boolean;
   emitter: boolean;
   symbol: boolean;

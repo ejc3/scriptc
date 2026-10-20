@@ -886,6 +886,15 @@ export class LlEmitter {
       this.schedulesInContextValue = moduleRuntimeFeatures(this.mod).asyncContext;
     return this.schedulesInContextValue;
   }
+  private dynBytesValue: boolean | undefined = undefined;
+  /** Whether dyn calls and constant-key reads of the Buffer and typed-array
+   * member names other values share go through scr_dyn_bytes_method.c
+   * (RuntimeFeatures dynBytes). */
+  get dynBytes(): boolean {
+    if (this.dynBytesValue === undefined)
+      this.dynBytesValue = moduleRuntimeFeatures(this.mod).dynBytes;
+    return this.dynBytesValue;
+  }
   /** Emitted ref-kind resolve thunks for new Promise, interned per inner
    * typeKey → thunk symbol. */
   readonly resolveThunks = new Map<string, string>();

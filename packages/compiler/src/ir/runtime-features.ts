@@ -247,6 +247,128 @@ const DYN_INVOKE_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "stream.unpipeDyn",
 ]);
 
+/** Buffer.prototype and %TypedArray%.prototype member names (scr_dyn_bytes_method.c's table, plus Buffer's parent and offset getters): calls and constant-key reads of them on dyn values dispatch through the dyn-bytes unit. */
+export const DYN_BYTES_MEMBER_NAMES: ReadonlySet<string> = new Set([
+  "asciiSlice",
+  "asciiWrite",
+  "at",
+  "base64Slice",
+  "base64Write",
+  "base64urlSlice",
+  "base64urlWrite",
+  "compare",
+  "copy",
+  "copyWithin",
+  "entries",
+  "equals",
+  "every",
+  "fill",
+  "filter",
+  "find",
+  "findIndex",
+  "findLast",
+  "findLastIndex",
+  "forEach",
+  "hexSlice",
+  "hexWrite",
+  "includes",
+  "indexOf",
+  "inspect",
+  "join",
+  "keys",
+  "lastIndexOf",
+  "latin1Slice",
+  "latin1Write",
+  "map",
+  "offset",
+  "parent",
+  "readBigInt64BE",
+  "readBigInt64LE",
+  "readBigUInt64BE",
+  "readBigUInt64LE",
+  "readBigUint64BE",
+  "readBigUint64LE",
+  "readDoubleBE",
+  "readDoubleLE",
+  "readFloatBE",
+  "readFloatLE",
+  "readInt16BE",
+  "readInt16LE",
+  "readInt32BE",
+  "readInt32LE",
+  "readInt8",
+  "readIntBE",
+  "readIntLE",
+  "readUInt16BE",
+  "readUInt16LE",
+  "readUInt32BE",
+  "readUInt32LE",
+  "readUInt8",
+  "readUIntBE",
+  "readUIntLE",
+  "readUint16BE",
+  "readUint16LE",
+  "readUint32BE",
+  "readUint32LE",
+  "readUint8",
+  "readUintBE",
+  "readUintLE",
+  "reduce",
+  "reduceRight",
+  "reverse",
+  "set",
+  "slice",
+  "some",
+  "sort",
+  "subarray",
+  "swap16",
+  "swap32",
+  "swap64",
+  "toJSON",
+  "toLocaleString",
+  "toReversed",
+  "toSorted",
+  "toString",
+  "ucs2Slice",
+  "ucs2Write",
+  "utf8Slice",
+  "utf8Write",
+  "values",
+  "with",
+  "write",
+  "writeBigInt64BE",
+  "writeBigInt64LE",
+  "writeBigUInt64BE",
+  "writeBigUInt64LE",
+  "writeBigUint64BE",
+  "writeBigUint64LE",
+  "writeDoubleBE",
+  "writeDoubleLE",
+  "writeFloatBE",
+  "writeFloatLE",
+  "writeInt16BE",
+  "writeInt16LE",
+  "writeInt32BE",
+  "writeInt32LE",
+  "writeInt8",
+  "writeIntBE",
+  "writeIntLE",
+  "writeUInt16BE",
+  "writeUInt16LE",
+  "writeUInt32BE",
+  "writeUInt32LE",
+  "writeUInt8",
+  "writeUIntBE",
+  "writeUIntLE",
+  "writeUint16BE",
+  "writeUint16LE",
+  "writeUint32BE",
+  "writeUint32LE",
+  "writeUint8",
+  "writeUintBE",
+  "writeUintLE",
+]);
+
 /** Member names whose constant-key dynamic reads answer the inherited Object.prototype member through the dyn-invoke unit. Mirrors expr-dynamic.ts INHERITED_OBJECT_MEMBERS (the IR layer does not import the backend). */
 const INHERITED_MEMBER_NAMES: ReadonlySet<string> = new Set([
   "constructor",
@@ -333,6 +455,30 @@ export function isDynUndefined(e: IrExpr): boolean {
   return e.kind === "dynFrom" && e.value.kind === "unitLit" && e.value.unit === "undefined";
 }
 
+/** The member name of a dyn call or constant-key dyn read that names a
+ * Buffer or typed-array member (DYN_BYTES_MEMBER_NAMES), or null. */
+function dynBytesMemberOf(node: IrExpr): string | null {
+  const name =
+    node.kind === "dynInvoke"
+      ? node.method
+      : node.kind === "dynKeyGet" && node.key.kind === "strLit"
+        ? node.key.value
+        : null;
+  return name !== null && DYN_BYTES_MEMBER_NAMES.has(name) ? name : null;
+}
+
+/** Buffer member names no other builtin prototype declares: the numeric
+ * read/write families, swap16/32/64 and the encoding-specific slice and
+ * write helpers. The emitter routes these through scr_dyn_bytes_method.c in
+ * every module; the names other values also answer (map, slice, write,
+ * toString, ...) route there only in modules that box typed arrays into dyn
+ * values (the dynBytes feature). */
+export function isDynBytesOnlyMember(name: string): boolean {
+  return /^(?:(?:read|write)(?:U?Int|Uint|Big|Float|Double)|swap(?:16|32|64)$|(?:ascii|base64|base64url|latin1|hex|ucs2|utf8)(?:Slice|Write)$)/.test(
+    name,
+  );
+}
+
 export function moduleRuntimeFeatures(mod: IrModule): RuntimeFeatures {
   return scanRuntimeFeatures(mod);
 }
@@ -348,33 +494,45 @@ interface TypeTables {
  * through scr_async_dyn.c: a promise, a function whose result type holds
  * one, or a record, array, tuple, union, Map or Set that holds either. */
 function boxesPromise(t: IrType, tables: TypeTables, seen: Set<string>): boolean {
+  return boxesKind(t, "promise", tables, seen);
+}
+
+/** Whether boxing a value of type `t` as dyn boxes a value of type kind
+ * `kind`: one of that kind, a function whose result type holds one, or a
+ * record, array, tuple, union, Map, Set or class instance that holds
+ * either. */
+function boxesKind(
+  t: IrType,
+  kind: IrType["kind"],
+  tables: TypeTables,
+  seen: Set<string>,
+): boolean {
+  if (t.kind === kind) return true;
   switch (t.kind) {
-    case "promise":
-      return true;
     case "func":
-      // A boxed function converts its result to dyn, which boxes any promise
-      // the result type holds.
-      return boxesPromise(t.ret, tables, seen);
+      // A boxed function converts its result to dyn, which boxes any value
+      // of the kind its result type holds.
+      return boxesKind(t.ret, kind, tables, seen);
     case "array":
     case "set":
-      return boxesPromise(t.elem, tables, seen);
+      return boxesKind(t.elem, kind, tables, seen);
     case "map":
-      return boxesPromise(t.key, tables, seen) || boxesPromise(t.value, tables, seen);
+      return boxesKind(t.key, kind, tables, seen) || boxesKind(t.value, kind, tables, seen);
     case "record": {
       if (seen.has(t.shapeId)) return false;
       seen.add(t.shapeId);
       const shape = tables.records.get(t.shapeId);
-      return shape?.fields.some((f) => boxesPromise(f.type, tables, seen)) ?? false;
+      return shape?.fields.some((f) => boxesKind(f.type, kind, tables, seen)) ?? false;
     }
     case "union": {
       if (seen.has(t.unionId)) return false;
       seen.add(t.unionId);
       const def = tables.unions.get(t.unionId);
-      return def?.arms.some((a) => boxesPromise(a, tables, seen)) ?? false;
+      return def?.arms.some((a) => boxesKind(a, kind, tables, seen)) ?? false;
     }
     case "object": {
       // A boxed class instance exposes its fields as dyn values (Object.keys,
-      // spread, inspection), boxing a promise any field holds. It
+      // spread, inspection), boxing such a value in any field. It
       // materializes inherited fields too, and the instance can be any
       // subclass.
       const key = `class:${t.className}`;
@@ -396,7 +554,7 @@ function boxesPromise(t: IrType, tables: TypeTables, seen: Set<string>): boolean
           c;
           c = c.base ? tables.classes.get(c.base) : undefined
         )
-          if (c.fields.some((f) => boxesPromise(f.type, tables, seen))) return true;
+          if (c.fields.some((f) => boxesKind(f.type, kind, tables, seen))) return true;
       }
       return false;
     }
@@ -494,8 +652,14 @@ interface RuntimeFeatureRule {
   fns?: readonly IrLibFn[];
   prefixes?: readonly string[];
   libCall?: (node: LibCallNode) => boolean;
-  expr?: (node: IrExpr, tables: () => TypeTables) => boolean;
+  expr?: (node: IrExpr, tables: () => TypeTables, facts: ModuleFacts) => boolean;
   types?: readonly IrType["kind"][];
+}
+
+/** Whole-module facts a rule's expr test can consult, computed on first use. */
+interface ModuleFacts {
+  /** Some dynFrom boxes a typed array or Buffer (or a value holding one). */
+  boxesBytes: () => boolean;
 }
 
 /** Gives every rule in the table one type. */
@@ -577,11 +741,23 @@ const RUNTIME_FEATURE_RULES = {
    * half (scr_dyn_builtin_stream.c): native stream state for constructor
    * functions, over the stream unit. */
   dynBuiltinStream: rule({ fns: ["dyn.builtinStreamClass"] }),
+  /** Buffer and typed-array members called or read on dyn values
+   * (scr_dyn_bytes_method.c, which continues other receivers through the
+   * dyn-invoke unit). */
+  dynBytes: rule({
+    expr: (node, _tables, facts) => {
+      // Calls of the fixed-width methods run in scr_bytes_dyn.c (dynBufferNum).
+      if (node.kind === "dynInvoke" && DYN_BUFFER_NUM_METHODS.has(node.method)) return false;
+      const name = dynBytesMemberOf(node);
+      return name !== null && (isDynBytesOnlyMember(name) || facts.boxesBytes());
+    },
+  }),
   dynInvoke: rule({
     initial: (mod) => mod.workers === true,
     fns: [...DYN_INVOKE_LIB_FNS, ...UTIL_CALLABLE_LIB_FNS, ...BUILTIN_CLASS_LIB_FNS],
     // Constant-key reads of Object.prototype member names answer the
-    // inherited member through scr_dyn_invoke.c.
+    // inherited member through scr_dyn_invoke.c. The dyn-bytes unit also
+    // links it (scanRuntimeFeatures).
     expr: (node, _tables) =>
       node.kind === "dynInvoke" ||
       (node.kind === "dynKeyGet" &&
@@ -761,6 +937,7 @@ function noRuntimeFeatures(): RuntimeFeatures {
     dynAsync: false,
     dynBuiltinClass: false,
     dynBuiltinStream: false,
+    dynBytes: false,
     dynInvoke: false,
     dynTier: false,
     emitter: false,
@@ -838,6 +1015,18 @@ function scanRuntimeFeatures(mod: IrModule, stopAt?: RuntimeFeatureName): Runtim
       unions: new Map((mod.unions ?? []).map((u) => [u.id, u])),
       classes: new Map((mod.classes ?? []).map((c) => [c.name, c])),
     });
+  let boxesBytes: boolean | undefined;
+  const facts: ModuleFacts = {
+    boxesBytes: () =>
+      (boxesBytes ??= !everyModuleNode(mod, {
+        expr: (node) =>
+          !(
+            node.kind === "dynFrom" && boxesKind(node.value.type, "bytes", typeTables(), new Set())
+          ),
+        stmt: () => true,
+        type: () => true,
+      })),
+  };
   const expr = (node: IrExpr): boolean => {
     if (node.kind === "libCall") {
       const fn = node.fn;
@@ -848,7 +1037,7 @@ function scanRuntimeFeatures(mod: IrModule, stopAt?: RuntimeFeatureName): Runtim
         if (!features[name] && ruleOf(name).libCall!(node)) features[name] = true;
     } else {
       for (const name of FEATURE_EXPR_TESTS)
-        if (!features[name] && ruleOf(name).expr!(node, typeTables)) features[name] = true;
+        if (!features[name] && ruleOf(name).expr!(node, typeTables, facts)) features[name] = true;
     }
     return keepGoing();
   };
@@ -857,6 +1046,8 @@ function scanRuntimeFeatures(mod: IrModule, stopAt?: RuntimeFeatureName): Runtim
     return keepGoing();
   };
   if (keepGoing()) everyModuleNode(mod, { expr, stmt: keepGoing, type });
+  // scr_dyn_bytes_method.c continues other receivers through the dyn-invoke unit.
+  if (features.dynBytes) features.dynInvoke = true;
   return features;
 }
 

@@ -65,6 +65,9 @@ export const OPTIONAL_RUNTIME_SOURCES = [
   ["scr_bytes_dyn.c", all("dynBufferNum", "dynInvoke")],
   // Builtin functions read as values in JavaScript dependencies.
   ["scr_builtin_values.c", "builtinValues"],
+  // Buffer and typed-array members on dyn values continue other receivers
+  // through the dyn-invoke unit.
+  ["scr_dyn_bytes_method.c", "dynBytes"],
   ["scr_dc.c", "dc"],
   // The dynamic tier's jsval values (two-tier design I3): linked only into
   // programs whose IR has dynamic-tier operations.

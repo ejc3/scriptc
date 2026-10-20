@@ -1139,6 +1139,14 @@ ScrDyn *scr_dyn_invoke_prepared(ScrDyn *recv, ScrDyn *callee, const char *method
  * ordinary dispatch. */
 ScrDyn *scr_dyn_invoke_buffer_num(ScrDyn *recv, ScrDyn *callee, const char *method, ScrDyn *const *args, size_t argc, const char *what);
 ScrDyn *scr_dyn_invoke(ScrDyn *recv, const char *method, ScrDyn *const *args, size_t argc, const char *what);
+/* Buffer.prototype and %TypedArray%.prototype members on dyn typed arrays
+ * (scr_dyn_bytes_method.c, the dynBytes feature). The invoke form takes
+ * scr_dyn_invoke_prepared's arguments and runs the member when the
+ * receiver is a typed array that has it, else continues there. The read
+ * form takes a constant-key read's +1 result and answers the member's
+ * interned function in place of an undefined one. */
+ScrDyn *scr_dyn_bytes_method_invoke(ScrDyn *recv, ScrDyn *callee, const char *method, ScrDyn *const *args, size_t argc, const char *what);
+ScrDyn *scr_dyn_bytes_method_read(const ScrDyn *d, const ScrStr *key, ScrDyn *read);
 /* Keyed read on a FUNC node: the own-property table first (defineProperties
  * writes land there), then "name" (the box's best-effort static name; ""
  * for anonymous) and "length" (the boxed arity). Returns +1, or NULL when

@@ -1,0 +1,6 @@
+{
+ "order": [
+  "<repo>/tests/corpus/6802-untyped-uint8array-methods.cjs"
+ ],
+ "diags": []
+}

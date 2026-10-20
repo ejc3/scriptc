@@ -2,6 +2,8 @@
   Resizing, transferring, and BigInt arrays are unsupported.
   `Float16Array` stores IEEE 754 half-precision values, rounding each stored number to nearest-even as Node does; `Math.f16round`, `DataView.prototype.getFloat16` and `setFloat16`, and `util.types.isFloat16Array` compile.
   Numeric typed arrays and Buffers preserve their kind and shared storage through `unknown`, including when nested in records and arrays.
+  On untyped values, `Buffer.prototype` and `%TypedArray%.prototype` methods can be called and read as functions, with Node's identities (`value.readUint8 === value.readUInt8`); Buffer's encoding-specific helpers such as `hexSlice` and `utf8Write` throw a catchable error, and a member read through a computed key (`value[name]`) answers `undefined`.
+  The members other values share (`map`, `slice`, `toString`, `write`) dispatch to typed arrays in modules that pass a typed array or Buffer to untyped code; in other modules, such as one whose only Buffers arrive from untyped stream listeners, calls on a typed array support only `at`, `slice`, `subarray`, `set`, `copyWithin` and `join` (and `fill` and `toString` on arrays that are not Buffers), and reads of these members answer `undefined`.
   Numeric typed-array constructors can be stored and used with `new`, including constructors read from an array's `constructor` property.
   JavaScript numeric-array parameters and returns preserve typed-array storage.
   `Buffer.from`, `Buffer.allocUnsafe`, and `Buffer.concat` return views into a per-thread pool of `Buffer.poolSize` bytes (64 KiB by default) when the size is below `Buffer.poolSize >>> 1`, as in Node; a pool slab stays in memory while any of its Buffers does.

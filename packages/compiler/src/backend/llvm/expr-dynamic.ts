@@ -28,7 +28,11 @@ import { elemAccess, vAdapters } from "./shapes.js";
 import { LlvmUnsupportedError } from "./unsupported.js";
 import type { LlvmEmitterContext, ExprOf, LlValue } from "./expr-context.js";
 import { emitUnionWiden } from "./expr-records.js";
-import { DYN_BUFFER_NUM_METHODS } from "../../ir/runtime-features.js";
+import {
+  DYN_BUFFER_NUM_METHODS,
+  DYN_BYTES_MEMBER_NAMES,
+  isDynBytesOnlyMember,
+} from "../../ir/runtime-features.js";
 
 export function emitDynamicExpr(
   host: LlvmEmitterContext,
@@ -228,10 +232,15 @@ export function emitDynamicExpr(
         argsPtr = arr;
       }
       // Fixed-width Buffer method names take scr_bytes_dyn.c's entry, which
-      // runs them on Buffer receivers and dispatches any other receiver.
+      // runs them on Buffer receivers and dispatches any other receiver. The
+      // other Buffer and typed-array member names dispatch through the
+      // dyn-bytes unit, which continues other receivers to
+      // scr_dyn_invoke_prepared.
       const invoke = DYN_BUFFER_NUM_METHODS.has(e.method)
         ? "scr_dyn_invoke_buffer_num"
-        : "scr_dyn_invoke_prepared";
+        : routesDynBytesMember(host, e.method)
+          ? "scr_dyn_bytes_method_invoke"
+          : "scr_dyn_invoke_prepared";
       host.declare(`declare ptr @${invoke}(ptr, ptr, ptr, ptr, ${host.sizeType}, ptr)`);
       let name = host.cstr(e.calleeName);
       if (e.calleeNameValue !== undefined) {
@@ -586,6 +595,15 @@ export function emitDynamicExpr(
         B.line(`${t} = ${generic}`);
       }
       let result = t;
+      if (e.key.kind === "strLit" && routesDynBytesMember(host, e.key.value)) {
+        // A typed array answers its Buffer or %TypedArray%.prototype member
+        // in place of an undefined read (scr_dyn_bytes_method.c).
+        host.declare(`declare ptr @scr_dyn_bytes_method_read(ptr, ptr, ptr)`);
+        result = B.tmp();
+        B.line(
+          `${result} = call ptr @scr_dyn_bytes_method_read(ptr ${d.name}, ptr ${k.name}, ptr ${t})`,
+        );
+      }
       if (prototypeJoin) {
         // An undefined read of an Object.prototype member name answers the
         // member the receiver inherits (scr_dyn_invoke.c; the frontend
@@ -593,7 +611,7 @@ export function emitDynamicExpr(
         host.declare(`declare ptr @scr_dyn_inherited_read(ptr, ptr, ptr)`);
         const read = B.tmp();
         B.line(
-          `${read} = call ptr @scr_dyn_inherited_read(ptr ${d.name}, ptr ${k.name}, ptr ${t})`,
+          `${read} = call ptr @scr_dyn_inherited_read(ptr ${d.name}, ptr ${k.name}, ptr ${result})`,
         );
         const readEnd = B.newLabel("dkg.rde");
         B.br(readEnd);
@@ -1295,3 +1313,10 @@ export const INHERITED_OBJECT_MEMBERS: ReadonlySet<string> = new Set([
   "hasOwnProperty",
   "propertyIsEnumerable",
 ]);
+
+/** Whether a dyn call or constant-key read of `name` goes through
+ * scr_dyn_bytes_method.c: the Buffer-only names always, the names other
+ * values share in modules with the dynBytes feature. */
+function routesDynBytesMember(host: LlvmEmitterContext, name: string): boolean {
+  return DYN_BYTES_MEMBER_NAMES.has(name) && (isDynBytesOnlyMember(name) || host.dynBytes);
+}

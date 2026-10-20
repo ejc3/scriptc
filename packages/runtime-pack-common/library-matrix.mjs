@@ -15,6 +15,7 @@ export function withLibraryRuntimeFlavors(matrix) {
     "scr_zlib.c",
     "scr_copying.c",
     "scr_dyn_invoke.c",
+    "scr_dyn_bytes_method.c",
     "scr_js_value.c",
   ]);
   const libraryUnits = [

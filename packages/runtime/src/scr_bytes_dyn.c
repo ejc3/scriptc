@@ -61,27 +61,33 @@ static bool scr_bytes_dyn_value_in_range(double value, size_t width, bool sign) 
 
 /* Node's order: a write converts the value with ToNumber and checks its
  * range, then the offset must be a number (absent means 0), then the
- * bounds. +1, or NULL with the exception pending. */
+ * bounds. One-byte integer writes (writeU_Int8) check the offset's type
+ * before the value's range. +1, or NULL with the exception pending. */
 static ScrDyn *scr_bytes_dyn_num_method(ScrBytes *b, bool read, size_t at, ScrDyn *const *args,
                                         size_t argc) {
   ScrBytesNumKind kind = scr_bytes_dyn_names[at].kind;
+  size_t offset_at = read ? 0 : 1;
+  const ScrDyn *offset_arg = argc > offset_at ? args[offset_at] : scr_dyn_undefined();
+  bool offset_ok = offset_arg->kind == SCR_DYN_UNDEF || offset_arg->kind == SCR_DYN_NUM;
   double value = 0;
   if (!read) {
     if (!scr_dyn_number_coerce_js(argc > 0 ? args[0] : scr_dyn_undefined(), &value)) return NULL;
     if (kind != SCR_BN_F32 && kind != SCR_BN_F64) {
       bool sign = kind == SCR_BN_I8 || kind == SCR_BN_I16 || kind == SCR_BN_I32;
-      if (!scr_bytes_dyn_value_in_range(value, scr_bytes_dyn_width(kind), sign)) return NULL;
+      size_t width = scr_bytes_dyn_width(kind);
+      if (width == 1 && !offset_ok) {
+        scr_dyn_arg_type_fail("offset", "of type number", offset_arg);
+        return NULL;
+      }
+      if (!scr_bytes_dyn_value_in_range(value, width, sign)) return NULL;
     }
   }
-  size_t offset_at = read ? 0 : 1;
   double offset = 0;
-  if (argc > offset_at && args[offset_at]->kind != SCR_DYN_UNDEF) {
-    if (args[offset_at]->kind != SCR_DYN_NUM) {
-      scr_dyn_arg_type_fail("offset", "of type number", args[offset_at]);
-      return NULL;
-    }
-    offset = args[offset_at]->v.num;
+  if (!offset_ok) {
+    scr_dyn_arg_type_fail("offset", "of type number", offset_arg);
+    return NULL;
   }
+  if (offset_arg->kind == SCR_DYN_NUM) offset = offset_arg->v.num;
   bool le = scr_bytes_dyn_names[at].le;
   double out = read ? scr_bytes_read_num(b, offset, kind, le) : scr_bytes_write_num(b, value, offset, kind, le);
   return scr_exc_pending() ? NULL : scr_dyn_new_num(out);

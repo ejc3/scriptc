@@ -34,6 +34,7 @@ export async function compilePackedLibrary(
     inspect: options.inspect ?? false,
     dynInvoke: options.dynInvoke ?? false,
     ...(options.dynTier === true ? { dynTier: true } : {}),
+    ...(options.dynBytes === true ? { dynBytes: true } : {}),
     dc: false,
     dynAsync: false,
     events: false,
