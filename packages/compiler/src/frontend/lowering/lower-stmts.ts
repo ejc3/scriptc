@@ -35,6 +35,7 @@ import {
 } from "./cjs-inline-require.js";
 import {
   cjsExportMemberWriteGlobalOf,
+  cjsWholeExportSlotOwner,
   isCjsExportsIdentifier,
   isCjsModuleExports,
   isFreshExportsReset,
@@ -6460,6 +6461,46 @@ function lowerCjsExportStatement(
       lowerer.badType(value, lowerer.typeOf(value));
     }
     const lowered = lowerer.lowerExprExpecting(value, g.type);
+    // A whole export that is a function, with a member program code writes
+    // through a require: requirers read that member from the function's
+    // own properties, so the export stores it there as well as in its
+    // export global.
+    const owner = ts.isIdentifier(nameNode)
+      ? cjsWholeExportSlotOwner(lowerer, cjs.expr.getSourceFile(), nameNode.text)
+      : null;
+    if (owner !== null && root?.type.kind !== "dyn" && ts.isIdentifier(nameNode)) {
+      const saved = lowerer.declareHiddenLocal("%cjsMember", g.type);
+      const savedRef = (): IrExpr => ({
+        kind: "varRef",
+        localId: saved.id,
+        type: g.type,
+        loc: locOf(value),
+      });
+      const fn = lowerer.lowerExpr(owner);
+      return {
+        kind: "block",
+        body: [
+          { kind: "varDecl", localId: saved.id, init: lowered, loc: locOf(value) },
+          {
+            kind: "exprStmt",
+            expr: {
+              kind: "libCall",
+              fn: "dyn.keySet",
+              args: [
+                lowerer.coerceInto(owner, fn, DYN),
+                { kind: "strLit", value: nameNode.text, type: STRING, loc: locOf(nameNode) },
+                lowerer.coerceInto(value, savedRef(), DYN),
+              ],
+              type: VOID,
+              loc,
+            },
+            loc,
+          },
+          { kind: "assign", localId: g.id, value: savedRef(), loc: locOf(value) },
+        ],
+        loc,
+      };
+    }
     if (root?.type.kind !== "dyn" || !ts.isIdentifier(nameNode)) {
       return { kind: "assign", localId: g.id, value: lowered, loc: locOf(value) };
     }

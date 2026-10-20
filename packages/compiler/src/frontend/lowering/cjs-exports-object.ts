@@ -553,25 +553,163 @@ function requiredModuleOfMemberAccess(
     return null;
   const dep = inlineProgramRequireOf(lowerer, declaration.initializer)?.dep ?? null;
   if (dep === null || !wholeExportIsFunction(lowerer, dep)) return null;
-  // A member the requirer writes through its binding is a runtime slot.
-  const name = access.name.text;
-  let written = false;
-  ts.walkPreorder(access.getSourceFile(), (n) => {
-    if (written) return "stop";
+  // A member program code may write on the value is a runtime slot.
+  const writes = wholeExportWrites(lowerer, dep);
+  return writes === "any" || writes.has(access.name.text) ? null : dep;
+}
+
+/** The function value of `sf`'s whole export (`module.exports = format`)
+ * when program code may write its member `name`, so reads of the member
+ * through a require are runtime reads of the function's properties: the
+ * module's own `module.exports.name = …` stores the member there too. */
+export function cjsWholeExportSlotOwner(
+  lowerer: Lowerer,
+  sf: ts.SourceFile,
+  name: string,
+): ts.Identifier | null {
+  if (!wholeExportIsFunction(lowerer, sf)) return null;
+  const writes = wholeExportWrites(lowerer, sf);
+  if (writes !== "any" && !writes.has(name)) return null;
+  const whole = cjsWholeExportValueOf(sf);
+  return whole !== null && ts.isIdentifier(whole.rhs) ? whole.rhs : null;
+}
+
+/** The member names program files may write on `dep`'s whole export value
+ * through a require of it: assignments, updates and deletes of `fmt.name`,
+ * `fmt["name"]` or `require("./lib").name`. "any" for a computed key, and
+ * for any use of the value other than a member access, a call or `typeof`,
+ * which hands it to code that can write it (`Object.assign(fmt, …)`,
+ * `mutate(fmt)`, a reassignment of the binding). */
+function wholeExportWrites(lowerer: Lowerer, dep: ts.SourceFile): ReadonlySet<string> | "any" {
+  const cached = lowerer.cjsWholeExportWrites.get(dep);
+  if (cached !== undefined) return cached;
+  const names = new Set<string>();
+  let any = false;
+  const use = (value: ts.Node): void => {
+    while (ts.isParenthesizedExpression(value.parent)) value = value.parent;
+    const parent = value.parent;
+    if (ts.isPropertyAccessExpression(parent) && parent.expression === value) {
+      if (isWrittenMember(parent)) names.add(parent.name.text);
+    } else if (ts.isElementAccessExpression(parent) && parent.expression === value) {
+      if (!isWrittenMember(parent)) return;
+      const key = parent.argumentExpression;
+      if (ts.isStringLiteralLike(key)) names.add(key.text);
+      else any = true;
+    } else if (
+      !(ts.isCallExpression(parent) && parent.expression === value) &&
+      !ts.isTypeOfExpression(parent)
+    ) {
+      any = true;
+    }
+  };
+  for (const sf of lowerer.program.getSourceFiles()) {
+    if (any) break;
+    if (sf.isDeclarationFile || !sf.text.includes("require")) continue;
+    const bindings = new Set<ts.Symbol>();
+    ts.walkPreorder(sf, (node) => {
+      if (any) return "stop";
+      if (!ts.isCallExpression(node) || inlineProgramRequireOf(lowerer, node)?.dep !== dep)
+        return undefined;
+      let value: ts.Node = node;
+      while (ts.isParenthesizedExpression(value.parent)) value = value.parent;
+      const declaration = value.parent;
+      if (!ts.isVariableDeclaration(declaration) || declaration.initializer !== value) use(node);
+      else if (ts.isIdentifier(declaration.name)) {
+        const symbol = lowerer.checker.getSymbolAtLocation(declaration.name);
+        if (symbol === undefined) any = true;
+        else bindings.add(symbol);
+      } else if (!ts.isObjectBindingPattern(declaration.name)) any = true;
+      return undefined;
+    });
+    if (any || bindings.size === 0) continue;
+    ts.walkPreorder(sf, (node) => {
+      if (any) return "stop";
+      if (!ts.isIdentifier(node)) return undefined;
+      const parent = node.parent;
+      if (ts.isVariableDeclaration(parent) && parent.name === node) return undefined;
+      const symbol = lowerer.checker.getSymbolAtLocation(node);
+      if (symbol !== undefined && bindings.has(symbol)) use(node);
+      return undefined;
+    });
+  }
+  // The module itself writes the value through the function's own binding
+  // (`format.version = 2`), or through `module.exports.name` inside a
+  // function, where memberWritesIn does not count the write.
+  const whole = cjsWholeExportValueOf(dep);
+  const fn =
+    whole !== null && ts.isIdentifier(whole.rhs) ? lowerer.resolveValueSymbol(whole.rhs) : null;
+  if (!any && whole !== null) {
+    ts.walkPreorder(dep, (node) => {
+      if (any) return "stop";
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        isWrittenMember(node) &&
+        (isModuleExportsAccess(node.expression) ||
+          (ts.isIdentifier(node.expression) && node.expression.text === "exports")) &&
+        cjsExportAssignmentOf(topLevelStatementOf(node)) === null
+      )
+        names.add(node.name.text);
+      if (
+        fn === null ||
+        !ts.isIdentifier(node) ||
+        node === whole.rhs ||
+        lowerer.resolveValueSymbol(node) !== fn
+      )
+        return undefined;
+      const parent = node.parent;
+      if (
+        (ts.isFunctionDeclaration(parent) || ts.isVariableDeclaration(parent)) &&
+        parent.name === node
+      )
+        return undefined;
+      use(node);
+      return undefined;
+    });
+  }
+  const result = any ? "any" : names;
+  lowerer.cjsWholeExportWrites.set(dep, result);
+  return result;
+}
+
+/** The top-level statement that contains `node`. */
+function topLevelStatementOf(node: ts.Node): ts.Statement {
+  while (node.parent !== undefined && !ts.isSourceFile(node.parent)) node = node.parent;
+  return node as ts.Statement;
+}
+
+/** True when a member access is assigned (directly, or as a destructuring
+ * or for-in/of target), updated or deleted. */
+function isWrittenMember(access: ts.Expression): boolean {
+  let node: ts.Node = access;
+  while (ts.isParenthesizedExpression(node.parent)) node = node.parent;
+  const parent = node.parent;
+  if (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent))
+    return (
+      parent.operator === ts.SyntaxKind.PlusPlusToken ||
+      parent.operator === ts.SyntaxKind.MinusMinusToken
+    );
+  if (ts.isDeleteExpression(parent)) return true;
+  // The target of an assignment or a for-in/of head, directly or as an
+  // element or property value of a destructuring literal.
+  let target: ts.Node = node;
+  for (;;) {
+    const up = target.parent;
+    if (ts.isBinaryExpression(up))
+      return (
+        up.left === target &&
+        up.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        up.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      );
     if (
-      ts.isBinaryExpression(n) &&
-      n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
-      n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
-      ts.isPropertyAccessExpression(n.left) &&
-      ts.isIdentifier(n.left.name) &&
-      n.left.name.text === name &&
-      ts.isIdentifier(n.left.expression) &&
-      lowerer.checker.getSymbolAtLocation(n.left.expression) === sym
+      ((ts.isPropertyAssignment(up) && up.initializer === target) ||
+        ts.isSpreadElement(up) ||
+        ts.isSpreadAssignment(up)) &&
+      up.parent !== undefined
     )
-      written = true;
-    return undefined;
-  });
-  return written ? null : dep;
+      target = up.parent;
+    else if (ts.isArrayLiteralExpression(up) || ts.isObjectLiteralExpression(up)) target = up;
+    else return (ts.isForInStatement(up) || ts.isForOfStatement(up)) && up.initializer === target;
+  }
 }
 
 /** True when the module's whole export names a function: a function
