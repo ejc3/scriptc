@@ -1154,6 +1154,20 @@ static void scr_stream_settle_next(ScrStream *s) {
     scr_promise_release(w);
     return;
   }
+  if (st->destroyed && !st->r.end_emitted && !(st->r.ended && st->r.length == 0)) {
+    /* Node's iterator reads nothing from a destroyed stream, and its eos
+     * callback, which runs after 'close', makes a readable side that did
+     * not finish throw ERR_STREAM_PREMATURE_CLOSE (settled again from the
+     * 'close' dispatch). */
+    if (!st->close_emitted) return;
+    ScrPromise *w = st->r.next_waiter;
+    st->r.next_waiter = NULL;
+    ScrError *e = scr_stream_mkerr("ERR_STREAM_PREMATURE_CLOSE", "Premature close");
+    scr_throw_obj(e, &scr_error_retain_v, &scr_error_release_v, scr_error_trace_arg());
+    scr_promise_reject_pending(w);
+    scr_promise_release(w);
+    return;
+  }
   if (st->r.length > 0) {
     if (st->r.next_parked) {
       if (!st->r.next_wake) {
@@ -6237,8 +6251,9 @@ static void scr_stream_run_tick(ScrStreamTick *t) {
         st->close_emitted = true;
         if (st->emit_close) scr_stream_emit0(s, "close");
         /* eos ordering: the finished()/pipeline watchers fire right after
-         * 'close' (Node's willEmitClose stance). */
+         * 'close' (Node's willEmitClose stance), the for-await's among them. */
         scr_stream_notify_finished(s);
+        if (st->has_r) scr_stream_settle_next(s);
         /* Fully closed: nothing calls the option callbacks again (Node's
          * contract), so drop them here — this breaks the reference cycle
          * a callback capturing its own stream forms, including the dyn-
