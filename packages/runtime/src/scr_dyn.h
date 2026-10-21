@@ -183,14 +183,18 @@ typedef enum {
   X(NET_SERVER, 3) /* ScrNetServer — net.Server (http.Server rides the same handle) */ \
   X(NET_SOCKET, 2) /* ScrNetSocket — net.Socket */ \
   X(NET_SOCKET_ADDRESS, 47) /* net.SocketAddress (scr_net.c) */ \
+  X(PRIVATE_KEY_OBJECT, 65) /* node:crypto private KeyObject (scr_pkey.c) */ \
+  X(PUBLIC_KEY_OBJECT, 66) /* node:crypto public KeyObject (scr_pkey.c) */ \
   X(REGEXP, 26) /* native RegExp, shared compiled pattern */ \
   X(SEARCH_PARAMS, 33) /* live WHATWG URLSearchParams */ \
   X(SEGMENTER, 19) /* default Unicode grapheme segmentation */ \
   X(SEGMENTS, 20) /* iterable immutable segmentation result */ \
   X(SET, 25) /* native Set<unknown>, shared backing map */ \
   X(SHARED_ARRAY_BUFFER, 37) \
+  X(SIGN, 67) /* node:crypto Sign (scr_pkey.c) */ \
   X(STDIO, 27) /* stable process stdin/stdout/stderr values */ \
   X(URL, 28) /* native WHATWG URL */ \
+  X(VERIFY, 68) /* node:crypto Verify (scr_pkey.c) */ \
   X(WASM_GLOBAL, 61) /* WebAssembly.Global */ \
   X(WASM_INSTANCE, 58) /* WebAssembly.Instance */ \
   X(WASM_MEMORY, 59) /* WebAssembly.Memory */ \

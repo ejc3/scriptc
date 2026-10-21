@@ -83,11 +83,28 @@ ScrDyn *scr_crypto_generate_key_sync(ScrDyn *type, ScrDyn *options);
 ScrBytes *scr_crypto_key_object_input(ScrDyn *key);
 bool scr_crypto_is_key_object(const ScrDyn *value);
 const unsigned char *scr_key_object_bytes(const ScrDyn *value, size_t *len);
+bool scr_crypto_is_asymmetric_key(const ScrDyn *value);
+/* Throws ERR_CRYPTO_INVALID_KEY_OBJECT_TYPE for an asymmetric KeyObject
+ * where a secret one is expected and answers true (scr_pkey.c installs
+ * it; NULL until a program creates an asymmetric key). */
+extern bool (*scr_crypto_asymmetric_key_type_fail)(const ScrDyn *value, const char *expected);
 /* crypto.createCipheriv (decrypt false) and crypto.createDecipheriv
  * (decrypt true) over checked-dynamic arguments (scr_cipher.c, linked
  * with the vendored mbedTLS archive). +1 handle, or NULL with Node's
  * error pending. */
 ScrDyn *scr_crypto_cipher_new(bool decrypt, ScrDyn *cipher, ScrDyn *key, ScrDyn *iv, ScrDyn *options);
+/* Public and private KeyObjects and RSA/ECDSA signatures (scr_pkey.c,
+ * linked with the vendored mbedTLS archive): createPrivateKey,
+ * createPublicKey, crypto.sign and crypto.verify (the callback argument
+ * is undefined or the value passed), and createSign (verify false) and
+ * createVerify (verify true) over checked-dynamic arguments. +1 result,
+ * or NULL with Node's error pending. */
+ScrDyn *scr_crypto_create_private_key(ScrDyn *key);
+ScrDyn *scr_crypto_create_public_key(ScrDyn *key);
+ScrDyn *scr_crypto_sign_oneshot(ScrDyn *algorithm, ScrDyn *data, ScrDyn *key, ScrDyn *callback);
+ScrDyn *scr_crypto_verify_oneshot(ScrDyn *algorithm, ScrDyn *data, ScrDyn *key, ScrDyn *signature,
+                                  ScrDyn *callback);
+ScrDyn *scr_crypto_signer_new(bool verify, ScrDyn *algorithm, ScrDyn *options);
 ScrBytes *scr_crypto_pbkdf2(ScrBytes *password, ScrBytes *salt,
                             double iterations, double keylen, ScrStr *digest);
 ScrBytes *scr_crypto_pbkdf2_job(ScrBytes *password, ScrBytes *salt, double iterations,
@@ -193,6 +210,47 @@ void scr_sm3_final(const ScrSm3Ctx *ctx, unsigned char out[32]);
 
 size_t scr_crypto_digest_raw(const char *alg, const unsigned char *data, size_t len,
                              unsigned char out[64]);
+/* The digest core by algorithm, for the units outside scr_lib.c.
+ * scr_crypto_digest_lookup resolves Node's digest names as the signing
+ * functions do (case-insensitive, with OpenSSL's aliases and object
+ * identifiers) and answers the ScrDigestAlg value, or -1 for an unknown
+ * name. An XOF digests to its default output length. */
+typedef enum ScrDigestAlg {
+  SCR_DIGEST_MD5,
+  SCR_DIGEST_SHA1,
+  SCR_DIGEST_SHA224,
+  SCR_DIGEST_SHA256,
+  SCR_DIGEST_SHA384,
+  SCR_DIGEST_SHA512,
+  SCR_DIGEST_SHA256_192,
+  SCR_DIGEST_SHA512_224,
+  SCR_DIGEST_SHA512_256,
+  SCR_DIGEST_SHA3_224,
+  SCR_DIGEST_SHA3_256,
+  SCR_DIGEST_SHA3_384,
+  SCR_DIGEST_SHA3_512,
+  SCR_DIGEST_KECCAK_224,
+  SCR_DIGEST_KECCAK_256,
+  SCR_DIGEST_KECCAK_384,
+  SCR_DIGEST_KECCAK_512,
+  SCR_DIGEST_SHAKE128,
+  SCR_DIGEST_SHAKE256,
+  SCR_DIGEST_KECCAK_KMAC128,
+  SCR_DIGEST_KECCAK_KMAC256,
+  SCR_DIGEST_RIPEMD160,
+  SCR_DIGEST_BLAKE2B512,
+  SCR_DIGEST_BLAKE2S256,
+  SCR_DIGEST_SM3,
+  SCR_DIGEST_MD5_SHA1,
+} ScrDigestAlg;
+int scr_crypto_digest_lookup(const char *name, size_t len);
+size_t scr_crypto_digest_size(ScrDigestAlg alg);
+bool scr_crypto_digest_is_xof(ScrDigestAlg alg);
+typedef struct ScrCryptoDigest ScrCryptoDigest;
+ScrCryptoDigest *scr_crypto_digest_new(ScrDigestAlg alg);
+void scr_crypto_digest_feed(ScrCryptoDigest *d, const unsigned char *data, size_t len);
+size_t scr_crypto_digest_finish(const ScrCryptoDigest *d, unsigned char out[64]);
+void scr_crypto_digest_free(ScrCryptoDigest *d);
 size_t scr_crypto_hmac_raw(const char *alg, const unsigned char *key, size_t keylen,
                            const unsigned char *data, size_t len, unsigned char out[64]);
 /* ── WebCrypto (scr_webcrypto.c) ─────────────────────────────────────

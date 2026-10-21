@@ -78,6 +78,9 @@ export interface NativeLinkFeatures {
   /** crypto.createCipheriv/createDecipheriv: scr_cipher.c plus the mbedTLS
    * archive. */
   cipher: boolean;
+  /** Public and private KeyObjects and RSA/ECDSA signatures: scr_pkey.c
+   * plus the mbedTLS archive. */
+  pkey: boolean;
   /** perf_hooks event-loop metrics: scr_perf_loop.c. */
   perfLoop: boolean;
   tlsCa: boolean;

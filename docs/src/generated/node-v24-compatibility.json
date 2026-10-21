@@ -209,9 +209,9 @@
       "apiEntries": 152,
       "static": {
         "supported": 6,
-        "partial": 39,
-        "refused": 21,
-        "not-implemented": 86,
+        "partial": 51,
+        "refused": 15,
+        "not-implemented": 80,
         "by-design": 0,
         "unreviewed": 0,
         "not-applicable": 0
@@ -11842,9 +11842,9 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "detail": "Explicitly rejected by a named compiler diagnostic.",
-        "verification": "explicit-refusal"
+        "status": "partial",
+        "detail": "Reads RSA and EC keys from PEM, DER (pkcs1, pkcs8, spki, sec1), encrypted PKCS#8 and traditional PEM, and JWK, with Node's argument, encoding, and OpenSSL errors; Ed25519, Ed448, X25519, X448, DSA, DH, and RSA-PSS keys, curves outside prime256v1, secp384r1, secp521r1, secp256k1, secp224r1, prime192v1, secp192k1, secp224k1, and the brainpool r1 curves, raw key formats, and OpenSSL STORE URLs are refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -11865,9 +11865,9 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "detail": "Explicitly rejected by a named compiler diagnostic.",
-        "verification": "explicit-refusal"
+        "status": "partial",
+        "detail": "Reads RSA and EC keys from PEM, DER (pkcs1, pkcs8, spki, sec1), encrypted PKCS#8 and traditional PEM, and JWK, with Node's argument, encoding, and OpenSSL errors; Ed25519, Ed448, X25519, X448, DSA, DH, and RSA-PSS keys, curves outside prime256v1, secp384r1, secp521r1, secp256k1, secp224r1, prime192v1, secp192k1, secp224k1, and the brainpool r1 curves, raw key formats, and OpenSSL STORE URLs are refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -11911,9 +11911,9 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "detail": "Explicitly rejected by a named compiler diagnostic.",
-        "verification": "explicit-refusal"
+        "status": "partial",
+        "detail": "Returns Sign and Verify objects whose update(), sign(), and verify() match Node's encodings, key forms, and state errors; the stream.Writable members are refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -11934,9 +11934,9 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "detail": "Explicitly rejected by a named compiler diagnostic.",
-        "verification": "explicit-refusal"
+        "status": "partial",
+        "detail": "Returns Sign and Verify objects whose update(), sign(), and verify() match Node's encodings, key forms, and state errors; the stream.Writable members are refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -12831,9 +12831,9 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "detail": "Explicitly rejected by a named compiler diagnostic.",
-        "verification": "explicit-refusal"
+        "status": "partial",
+        "detail": "Signs and verifies with RSA (PKCS#1 v1.5 and PSS padding with OpenSSL's salt length rules) and ECDSA (DER and IEEE P1363 encodings) over every digest createHash accepts, with Node's option and provider errors; the callback form and X9.31 padding are refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -12877,9 +12877,9 @@
         "inherited": true
       },
       "static": {
-        "status": "refused",
-        "detail": "Explicitly rejected by a named compiler diagnostic.",
-        "verification": "explicit-refusal"
+        "status": "partial",
+        "detail": "Signs and verifies with RSA (PKCS#1 v1.5 and PSS padding with OpenSSL's salt length rules) and ECDSA (DER and IEEE P1363 encodings) over every digest createHash accepts, with Node's option and provider errors; the callback form and X9.31 padding are refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -14188,9 +14188,9 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "detail": "No static compiler lowering is registered for this API yet.",
-        "verification": "registry-gap"
+        "status": "partial",
+        "detail": "Matches Node's update() encodings, sign() and verify() key forms, output and signature encodings, and the spent-object errors; the stream.Writable interface is refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -14211,9 +14211,9 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "detail": "No static compiler lowering is registered for this API yet.",
-        "verification": "registry-gap"
+        "status": "partial",
+        "detail": "Matches Node's update() encodings, sign() and verify() key forms, output and signature encodings, and the spent-object errors; the stream.Writable interface is refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -14234,9 +14234,9 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "detail": "No static compiler lowering is registered for this API yet.",
-        "verification": "registry-gap"
+        "status": "partial",
+        "detail": "Matches Node's update() encodings, sign() and verify() key forms, output and signature encodings, and the spent-object errors; the stream.Writable interface is refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -14257,9 +14257,9 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "detail": "No static compiler lowering is registered for this API yet.",
-        "verification": "registry-gap"
+        "status": "partial",
+        "detail": "Matches Node's update() encodings, sign() and verify() key forms, output and signature encodings, and the spent-object errors; the stream.Writable interface is refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -14280,9 +14280,9 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "detail": "No static compiler lowering is registered for this API yet.",
-        "verification": "registry-gap"
+        "status": "partial",
+        "detail": "Matches Node's update() encodings, sign() and verify() key forms, output and signature encodings, and the spent-object errors; the stream.Writable interface is refused.",
+        "verification": "test-backed"
       }
     },
     {
@@ -14303,9 +14303,9 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "detail": "No static compiler lowering is registered for this API yet.",
-        "verification": "registry-gap"
+        "status": "partial",
+        "detail": "Matches Node's update() encodings, sign() and verify() key forms, output and signature encodings, and the spent-object errors; the stream.Writable interface is refused.",
+        "verification": "test-backed"
       }
     },
     {

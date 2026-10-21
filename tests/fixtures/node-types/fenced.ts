@@ -97,6 +97,13 @@ void callbackified;
  * getAuthTag(), and setAuthTag(); the stream.Transform members are fenced. */
 const cipherStream = createCipheriv("aes-128-cbc", Buffer.alloc(16), Buffer.alloc(16));
 cipherStream.on("data", () => {});
+/* Sign and Verify values support update(), sign(), and verify(); the
+ * stream.Writable members are fenced, and so are the callback forms of
+ * crypto.sign and crypto.verify. */
+import { createSign, sign as signOneShot } from "node:crypto";
+const signStream = createSign("sha256");
+signStream.write("data");
+signOneShot("sha256", Buffer.from("data"), "key", (error, signature) => void [error, signature]);
 /* WebCrypto beyond the HMAC slice: @types/node declares the whole
  * SubtleCrypto surface, and the methods outside importKey, sign, verify
  * and digest fence by name. */

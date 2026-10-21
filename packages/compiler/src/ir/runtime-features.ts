@@ -501,6 +501,15 @@ interface RuntimeFeatureRule {
 /** Gives every rule in the table one type. */
 const rule = (r: RuntimeFeatureRule): RuntimeFeatureRule => r;
 
+/* The public-key unit's entry points (scr_pkey.c). */
+const PKEY_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
+  "crypto.createPrivateKey",
+  "crypto.createPublicKey",
+  "crypto.signOneShot",
+  "crypto.verifyOneShot",
+  "crypto.signerNew",
+]);
+
 /* The HTTP, HTTPS, HTTP/2 and TLS surfaces, which link the net unit. */
 const NET_PREFIXES: readonly string[] = ["net.", "http.", "tls.", "https.", "http2."];
 
@@ -678,6 +687,9 @@ const RUNTIME_FEATURE_RULES = {
   /** perf_hooks event-loop metrics (eventLoopUtilization,
    * monitorEventLoopDelay): scr_perf_loop.c. */
   perfLoop: rule({ fns: ["perf.idleTime"], prefixes: ["perf.loop", "perf.eld"] }),
+  /** scr_pkey.c over the mbedTLS archive: public and private KeyObjects
+   * and RSA/ECDSA signatures. */
+  pkey: rule({ fns: [...PKEY_LIB_FNS] }),
   processEvents: rule({ fns: [...PROCESS_EVENT_LIB_FNS, "util.styleText"], types: ["procStream"] }),
   /** scr_url_legacy.c parses and stringifies queries. */
   qs: rule({ fns: [...QS_LIB_FNS, ...LEGACY_URL_LIB_FNS] }),
@@ -779,6 +791,7 @@ function noRuntimeFeatures(): RuntimeFeatures {
     nodeTest: false,
     parseArgs: false,
     perfLoop: false,
+    pkey: false,
     processEvents: false,
     qs: false,
     regex: false,

@@ -7,9 +7,9 @@
     "tierItemCount": 3454,
     "tiers": {
       "static": {
-        "audit-partial": 1197,
-        "verify-gap": 2130,
-        "replace-refusal": 40,
+        "audit-partial": 1209,
+        "verify-gap": 2124,
+        "replace-refusal": 34,
         "classify": 2,
         "implement": 85
       }
@@ -6841,12 +6841,20 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.crypto.createPrivateKey",
-          "tests": []
+          "source": "surface-manifest:node-builtin.crypto.createPrivateKey",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js",
+            "tests/corpus/6787-crypto-encrypted-keys.ts",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -6866,12 +6874,20 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.crypto.createPublicKey",
-          "tests": []
+          "source": "surface-manifest:node-builtin.crypto.createPublicKey",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js",
+            "tests/corpus/6787-crypto-encrypted-keys.ts",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -6898,7 +6914,10 @@
           "source": "compiler-dedicated:crypto.createSecretKey",
           "tests": [
             "tests/corpus/5445-crypto-secret-key-objects.ts",
-            "tests/corpus/5446-crypto-secret-key-errors.js"
+            "tests/corpus/5446-crypto-secret-key-errors.js",
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js"
           ]
         }
       }
@@ -6919,12 +6938,17 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.crypto.createSign",
-          "tests": []
+          "source": "surface-manifest:node-builtin.crypto.createSign",
+          "tests": [
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -6944,12 +6968,17 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.crypto.createVerify",
-          "tests": []
+          "source": "surface-manifest:node-builtin.crypto.createVerify",
+          "tests": [
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -7051,7 +7080,10 @@
           "source": "compiler-dedicated:crypto.generateKey",
           "tests": [
             "tests/corpus/5445-crypto-secret-key-objects.ts",
-            "tests/corpus/5446-crypto-secret-key-errors.js"
+            "tests/corpus/5446-crypto-secret-key-errors.js",
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js"
           ]
         }
       }
@@ -7129,7 +7161,10 @@
           "source": "compiler-dedicated:crypto.generateKeySync",
           "tests": [
             "tests/corpus/5445-crypto-secret-key-objects.ts",
-            "tests/corpus/5446-crypto-secret-key-errors.js"
+            "tests/corpus/5446-crypto-secret-key-errors.js",
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js"
           ]
         }
       }
@@ -7878,12 +7913,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.crypto.sign",
-          "tests": []
+          "source": "surface-manifest:node-builtin.crypto.sign",
+          "tests": [
+            "tests/corpus/6783-crypto-sign-rsa.ts",
+            "tests/corpus/6784-crypto-sign-ecdsa.ts",
+            "tests/corpus/6786-crypto-sign-errors.js",
+            "tests/corpus/6787-crypto-encrypted-keys.ts",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -7903,12 +7945,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "refused",
-          "action": "replace-refusal",
-          "verification": "explicit-refusal",
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
           "confidence": "high",
-          "source": "surface-manifest:unsupported:node-builtin.crypto.verify",
-          "tests": []
+          "source": "surface-manifest:node-builtin.crypto.verify",
+          "tests": [
+            "tests/corpus/6783-crypto-sign-rsa.ts",
+            "tests/corpus/6784-crypto-sign-ecdsa.ts",
+            "tests/corpus/6786-crypto-sign-errors.js",
+            "tests/corpus/6787-crypto-encrypted-keys.ts",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -9309,7 +9358,10 @@
           "source": "compiler-dedicated:KeyObject",
           "tests": [
             "tests/corpus/5445-crypto-secret-key-objects.ts",
-            "tests/corpus/5446-crypto-secret-key-errors.js"
+            "tests/corpus/5446-crypto-secret-key-errors.js",
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js"
           ]
         }
       }
@@ -9337,7 +9389,10 @@
           "source": "compiler-dedicated:keyObject.equals",
           "tests": [
             "tests/corpus/5445-crypto-secret-key-objects.ts",
-            "tests/corpus/5446-crypto-secret-key-errors.js"
+            "tests/corpus/5446-crypto-secret-key-errors.js",
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js"
           ]
         }
       }
@@ -9365,7 +9420,10 @@
           "source": "compiler-dedicated:keyObject.export",
           "tests": [
             "tests/corpus/5445-crypto-secret-key-objects.ts",
-            "tests/corpus/5446-crypto-secret-key-errors.js"
+            "tests/corpus/5446-crypto-secret-key-errors.js",
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6782-crypto-key-input-errors.js"
           ]
         }
       }
@@ -9586,12 +9644,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:crypto",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-dedicated:Sign",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -9611,12 +9676,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:crypto",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-dedicated:sign.sign",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -9636,12 +9708,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:crypto",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-dedicated:sign.update",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -9661,12 +9740,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:crypto",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-dedicated:Verify",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -9686,12 +9772,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:crypto",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-dedicated:verify.update",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },
@@ -9711,12 +9804,19 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:crypto",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-dedicated:verify.verify",
+          "tests": [
+            "tests/corpus/6780-crypto-key-objects-rsa.ts",
+            "tests/corpus/6781-crypto-key-objects-ec.ts",
+            "tests/corpus/6785-crypto-sign-objects.cjs",
+            "tests/corpus/6788-crypto-jwk-signatures.mjs",
+            "tests/corpus/6789-crypto-key-objects-mixed.ts",
+            "tests/fixtures/node-types/signatures.ts"
+          ]
         }
       }
     },

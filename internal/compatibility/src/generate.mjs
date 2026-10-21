@@ -584,6 +584,15 @@ function publicDetail(tier) {
   if (/^surface-manifest:node-builtin\.crypto\.create(?:Cipheriv|Decipheriv)$/.test(source)) {
     return "Supports aes-128/192/256 in cbc, ctr, and gcm modes and chacha20-poly1305 with Node's argument, IV, tag-length, and key-length errors; other OpenSSL ciphers and KeyObject keys are refused.";
   }
+  if (/^surface-manifest:node-builtin\.crypto\.create(?:Private|Public)Key$/.test(source)) {
+    return "Reads RSA and EC keys from PEM, DER (pkcs1, pkcs8, spki, sec1), encrypted PKCS#8 and traditional PEM, and JWK, with Node's argument, encoding, and OpenSSL errors; Ed25519, Ed448, X25519, X448, DSA, DH, and RSA-PSS keys, curves outside prime256v1, secp384r1, secp521r1, secp256k1, secp224r1, prime192v1, secp192k1, secp224k1, and the brainpool r1 curves, raw key formats, and OpenSSL STORE URLs are refused.";
+  }
+  if (/^surface-manifest:node-builtin\.crypto\.(?:sign|verify)$/.test(source)) {
+    return "Signs and verifies with RSA (PKCS#1 v1.5 and PSS padding with OpenSSL's salt length rules) and ECDSA (DER and IEEE P1363 encodings) over every digest createHash accepts, with Node's option and provider errors; the callback form and X9.31 padding are refused.";
+  }
+  if (/^surface-manifest:node-builtin\.crypto\.create(?:Sign|Verify)$/.test(source)) {
+    return "Returns Sign and Verify objects whose update(), sign(), and verify() match Node's encodings, key forms, and state errors; the stream.Writable members are refused.";
+  }
   if (source.startsWith("surface-manifest:"))
     return "Implemented for the call shapes accepted by the compiler lowering.";
   if (/^compiler-dedicated:assert\.doesNot(?:Throw|Reject)$/.test(source)) {
@@ -591,6 +600,9 @@ function publicDetail(tier) {
   }
   if (/^compiler-dedicated:(?:Cipheriv|Decipheriv|cipher\.|decipher\.)/.test(source)) {
     return "Matches Node's update() output lengths, padding, authentication tags, string encodings, and state errors for the supported ciphers; the stream.Transform interface is refused.";
+  }
+  if (/^compiler-dedicated:(?:Sign|Verify|sign\.|verify\.)/.test(source)) {
+    return "Matches Node's update() encodings, sign() and verify() key forms, output and signature encodings, and the spent-object errors; the stream.Writable interface is refused.";
   }
   if (source.startsWith("compiler-dedicated:"))
     return "Implemented by a dedicated static compiler/runtime path.";

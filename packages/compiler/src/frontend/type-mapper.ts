@@ -191,6 +191,9 @@ export const CIPHER_TYPE_NAMES: ReadonlySet<string> = new Set([
   "DecipherChaCha20Poly1305",
 ]);
 
+/** node:crypto's Sign and Verify classes in @types/node. */
+export const SIGNER_TYPE_NAMES: ReadonlySet<string> = new Set(["Sign", "Verify"]);
+
 /** node:util.parseArgs's public and @types/node helper type names, plus
  * util.debuglog's DebugLogger (a native function value with an `enabled`
  * accessor) and the DebugLoggerFunction its callback receives. Values
@@ -2873,12 +2876,15 @@ function mapTypeInner(type: ts.Type, ctx: TypeMapperCtx): IrType | null {
   ) {
     return DYN;
   }
-  // node:crypto's KeyObject: secret keys are native handles (scr_lib.c)
-  // whose getters and methods dispatch through the handle. The JsonWebKey
-  // that export() returns is a plain checked-dynamic object.
+  // node:crypto's KeyObject: secret keys (scr_lib.c) and public and
+  // private keys (scr_pkey.c) are native handles whose getters and methods
+  // dispatch through the handle. The JsonWebKey that export() returns and
+  // the asymmetricKeyDetails object are plain checked-dynamic objects.
   if (
-    ((psym !== undefined && ts.symbolName(psym) === "KeyObject") ||
-      (psym !== undefined && ts.symbolName(psym) === "JsonWebKey")) &&
+    psym !== undefined &&
+    (ts.symbolName(psym) === "KeyObject" ||
+      ts.symbolName(psym) === "JsonWebKey" ||
+      ts.symbolName(psym) === "AsymmetricKeyDetails") &&
     psym.declarations.some(
       (d) =>
         (ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d)) &&
@@ -2928,6 +2934,15 @@ function mapTypeInner(type: ts.Type, ctx: TypeMapperCtx): IrType | null {
   if (
     psym !== undefined &&
     CIPHER_TYPE_NAMES.has(ts.symbolName(psym)) &&
+    psym.declarations.some((d) => ctx.isStdlibFile(ts.getSourceFileOfNode(d)))
+  ) {
+    return DYN;
+  }
+  // node:crypto Sign/Verify values are native handles the same way;
+  // lowerSignerMethodCall dispatches their methods.
+  if (
+    psym !== undefined &&
+    SIGNER_TYPE_NAMES.has(ts.symbolName(psym)) &&
     psym.declarations.some((d) => ctx.isStdlibFile(ts.getSourceFileOfNode(d)))
   ) {
     return DYN;

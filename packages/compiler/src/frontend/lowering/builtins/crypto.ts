@@ -4,7 +4,7 @@ import { boolLit, dynUndefinedExpr, nodeThrowExpr, varRef } from "../../../ir/bu
 import * as ts from "../../ts7/adapter.js";
 import { type Lowerer, own } from "../lowerer.js";
 import { locOf } from "../../program.js";
-import { CIPHER_TYPE_NAMES } from "../../type-mapper.js";
+import { CIPHER_TYPE_NAMES, SIGNER_TYPE_NAMES } from "../../type-mapper.js";
 import { CRYPTO_CIPHERS, CRYPTO_CURVES, CRYPTO_HASHES } from "../crypto-tables.js";
 import {
   BOOL,
@@ -382,6 +382,35 @@ export function lowerCryptoModuleCall(
       type: CRYPTOHASH_T,
       loc,
     };
+  }
+  if (bi.member === "createPrivateKey" || bi.member === "createPublicKey") {
+    return lowerCryptoDynCall(lowerer, args, 1, `crypto.${bi.member}`, loc);
+  }
+  if (bi.member === "sign" || bi.member === "verify") {
+    // A callback argument that is not a function reaches the runtime,
+    // which throws Node's ERR_INVALID_ARG_TYPE for it.
+    const count = bi.member === "sign" ? 3 : 4;
+    const callback = args[count];
+    if (callback && lowerer.mapTypeOf(lowerer.typeOf(callback))?.kind === "func")
+      lowerer.noLowering(
+        `crypto.${bi.member} with a callback`,
+        expr,
+        bi.member === "sign"
+          ? "sign(algorithm, data, key) is supported; call it without a callback"
+          : "verify(algorithm, data, key, signature) is supported; call it without a callback",
+      );
+    const fn = bi.member === "sign" ? "crypto.signOneShot" : "crypto.verifyOneShot";
+    return checkedResult(lowerer, expr, lowerCryptoDynCall(lowerer, args, count + 1, fn, loc));
+  }
+  if (bi.member === "createSign" || bi.member === "createVerify") {
+    return lowerCryptoDynCall(
+      lowerer,
+      args,
+      2,
+      "crypto.signerNew",
+      loc,
+      boolLit(bi.member === "createVerify", loc),
+    );
   }
   if (bi.member === "createCipheriv" || bi.member === "createDecipheriv") {
     const algorithm = args[0];
@@ -837,6 +866,93 @@ export function lowerCryptoModuleCall(
     type: arrayOf(STRING),
     loc,
   };
+}
+
+/** A libCall over `count` checked-dynamic arguments (undefined when
+ * missing), after `leading`. Every argument is evaluated, left to right,
+ * before the runtime checks them; surplus arguments are evaluated and
+ * dropped. */
+function lowerCryptoDynCall(
+  lowerer: Lowerer,
+  args: readonly ts.Expression[],
+  count: number,
+  fn: IrLibFn,
+  loc: SrcLoc,
+  leading?: IrExpr,
+): IrExpr {
+  const stmts: IrStmt[] = [];
+  const values: IrExpr[] = leading ? [leading] : [];
+  for (let i = 0; i < count; i++) {
+    const input: IrExpr = args[i]
+      ? lowerer.lowerExprExpecting(args[i]!, DYN)
+      : dynUndefinedExpr(loc);
+    const saved = lowerer.declareHiddenLocal("%cryptoInput", DYN);
+    stmts.push({ kind: "varDecl", localId: saved.id, init: input, loc });
+    values.push(varRef(saved.id, DYN, loc));
+  }
+  for (const arg of args.slice(count))
+    stmts.push({ kind: "exprStmt", expr: lowerer.lowerExpr(arg), loc });
+  return {
+    kind: "seqExpr",
+    stmts,
+    result: { kind: "libCall", fn, args: values, type: DYN, loc },
+    type: DYN,
+    loc,
+  };
+}
+
+/** A checked-dynamic result as the call's static type: sign's Buffer,
+ * verify's boolean, and Sign.sign's Buffer or string. */
+function checkedResult(lowerer: Lowerer, call: ts.CallExpression, value: IrExpr): IrExpr {
+  const type = lowerer.mapTypeOf(lowerer.typeOf(call));
+  if (!type || type.kind === "dyn" || type.kind === "void") return value;
+  return { kind: "dynCheck", value, type, loc: locOf(call) };
+}
+
+/** Whether a checker type is node:crypto's Sign or Verify class. */
+export function isSignerType(lowerer: Lowerer, type: ts.Type): boolean {
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  return (
+    !!symbol &&
+    SIGNER_TYPE_NAMES.has(ts.symbolName(symbol)) &&
+    symbol.declarations.some((d) => lowerer.isStdlibFile(ts.getSourceFileOfNode(d)))
+  );
+}
+
+/** Calls on native Sign/Verify handles dispatch through the handle's
+ * methods with checked-dynamic arguments. The stream.Writable members the
+ * classes inherit are refused. */
+export function lowerSignerMethodCall(
+  lowerer: Lowerer,
+  call: ts.CallExpression,
+  access: ts.PropertyAccessExpression,
+): IrExpr | null {
+  if (call.questionDotToken || access.questionDotToken) return null;
+  const type = lowerer.typeOf(access.expression);
+  if (!isSignerType(lowerer, type)) return null;
+  const symbol = type.getAliasSymbol() ?? type.getSymbol();
+  const verify = !!symbol && ts.symbolName(symbol) === "Verify";
+  const name = access.name.text;
+  if (name !== "update" && name !== (verify ? "verify" : "sign")) {
+    lowerer.noLowering(
+      `${verify ? "Verify" : "Sign"}.${name}`,
+      call,
+      verify
+        ? "update() and verify() are supported; Verify streams are not"
+        : "update() and sign() are supported; Sign streams are not",
+    );
+  }
+  if (call.arguments.nodes.some(ts.isSpreadElement))
+    lowerer.noLowering(`${verify ? "Verify" : "Sign"}.${name} with spread arguments`, call);
+  return checkedResult(lowerer, call, {
+    kind: "dynInvoke",
+    recv: lowerer.lowerExprExpecting(access.expression, DYN),
+    method: name,
+    calleeName: v8CalleeText(access),
+    args: call.arguments.nodes.map((arg) => lowerer.lowerExprExpecting(arg, DYN)),
+    type: DYN,
+    loc: locOf(call),
+  });
 }
 
 /** The implemented cipher names and OpenSSL's aliases for them,

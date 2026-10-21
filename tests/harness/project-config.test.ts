@@ -1029,6 +1029,20 @@ test("node-types: Cipheriv and Decipheriv match Node under @types/node", async (
   expect(comparableStderr(native.stderr)).toBe(node.stderr);
 });
 
+test("node-types: KeyObjects, Sign, and Verify match Node under @types/node", async () => {
+  const outDir = outDirFor("node-signatures");
+  const entry = join(nodeTypesDir, "signatures.ts");
+  const result = await compile(entry, { outPath: join(outDir, "signatures"), outDir, sanitize });
+  expect(result.ok, !result.ok ? JSON.stringify(result.diagnostics, null, 2) : "").toBe(true);
+  if (!result.ok) return;
+  const [native, node] = await Promise.all([
+    execFileAsync(result.binaryPath),
+    execFileAsync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", entry]),
+  ]);
+  expect(native.stdout).toBe(node.stdout);
+  expect(comparableStderr(native.stderr)).toBe(node.stderr);
+});
+
 test("node-types: WebCrypto HMAC matches Node under @types/node", async () => {
   const outDir = outDirFor("node-webcrypto-hmac");
   const entry = join(nodeTypesDir, "webcrypto-hmac.ts");

@@ -2762,6 +2762,17 @@ export const LIB_FN_SIGS = defineLibFnSignatures({
    * cipher, key, iv and options arguments (scr_cipher.c): a native
    * Cipheriv/Decipheriv handle whose methods dispatch through dynInvoke. */
   "crypto.cipherNew": { argTypes: [BOOL, DYN, DYN, DYN, DYN], result: DYN },
+  /** createPrivateKey / createPublicKey over a checked-dynamic key argument
+   * (scr_pkey.c): a native private or public KeyObject handle. */
+  "crypto.createPrivateKey": { argTypes: [DYN], result: DYN },
+  "crypto.createPublicKey": { argTypes: [DYN], result: DYN },
+  /** crypto.sign(algorithm, data, key[, callback]) and crypto.verify(algorithm,
+   * data, key, signature[, callback]): a Buffer and a boolean. */
+  "crypto.signOneShot": { argTypes: [DYN, DYN, DYN, DYN], result: DYN },
+  "crypto.verifyOneShot": { argTypes: [DYN, DYN, DYN, DYN, DYN], result: DYN },
+  /** createSign (false) / createVerify (true): a native Sign or Verify
+   * handle whose methods dispatch through dynInvoke. */
+  "crypto.signerNew": { argTypes: [BOOL, DYN, DYN], result: DYN },
   "crypto.hmacNewStr": { argTypes: [STRING, STRING], result: CRYPTOHMAC_T },
   "crypto.hmacNewBytes": { argTypes: [STRING, BYTES_U8], result: CRYPTOHMAC_T },
   "crypto.hashUpdateStr": { argTypes: [CRYPTOHASH_T, STRING], result: CRYPTOHASH_T },

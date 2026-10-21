@@ -10,6 +10,12 @@ import type { IrLibFn } from "./builtin-signatures.js";
 export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   // Node's argument, cipher-name, IV, tag-length and key-length errors.
   "crypto.cipherNew",
+  // Node's key, encoding, digest and padding errors.
+  "crypto.createPrivateKey",
+  "crypto.createPublicKey",
+  "crypto.signOneShot",
+  "crypto.verifyOneShot",
+  "crypto.signerNew",
   // node:test's { timeout } and { concurrency } range checks.
   "test.register",
   "test.registerEmpty",

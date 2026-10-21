@@ -208,6 +208,20 @@ export function moduleWasiUnavailableSurface(
         };
         return false;
       }
+      if (
+        node.fn === "crypto.createPrivateKey" ||
+        node.fn === "crypto.createPublicKey" ||
+        node.fn === "crypto.signOneShot" ||
+        node.fn === "crypto.verifyOneShot" ||
+        node.fn === "crypto.signerNew"
+      ) {
+        found = {
+          surface:
+            "public and private keys and signatures (the wasm32-wasi runtime does not include the mbedTLS library)",
+          loc,
+        };
+        return false;
+      }
       if (node.fn === "os.networkInterfaces") {
         found = {
           surface: "network-interface enumeration (WASI Preview 1 has no interface API)",

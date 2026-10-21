@@ -457,6 +457,9 @@ static ScrDyn *sc_cipher_new(bool decrypt, ScrDyn *cipher, ScrDyn *key, ScrDyn *
     /* prepareSecretKey: a secret KeyObject supplies its bytes. */
     key_bytes = scr_bytes_new(SCR_BYTES_U8, (double)key_object_len);
     if (key_object_len) memcpy(key_bytes->data, key_object, key_object_len);
+  } else if (scr_crypto_is_asymmetric_key(key) && scr_crypto_asymmetric_key_type_fail &&
+             scr_crypto_asymmetric_key_type_fail(key, "secret")) {
+    /* An asymmetric KeyObject: ERR_CRYPTO_INVALID_KEY_OBJECT_TYPE. */
   } else if (key->kind == SCR_DYN_STR || sc_is_view(key) || scr_buffer_storage_is(key)) {
     key_bytes = sc_buffer_or_view(key, "key", encoding);
   } else {

@@ -1571,6 +1571,14 @@ export const BUILTIN_MODULE_FNS: Record<
     // Decipheriv handle (lowerCryptoModuleCall).
     createCipheriv: { fn: "crypto.cipherNew", params: [BOOL, DYN, DYN, DYN, DYN], result: DYN },
     createDecipheriv: { fn: "crypto.cipherNew", params: [BOOL, DYN, DYN, DYN, DYN], result: DYN },
+    // Checked-dynamic arguments; the results are native KeyObject, Sign
+    // and Verify handles, a Buffer and a boolean (lowerCryptoModuleCall).
+    createPrivateKey: { fn: "crypto.createPrivateKey", params: [DYN], result: DYN },
+    createPublicKey: { fn: "crypto.createPublicKey", params: [DYN], result: DYN },
+    sign: { fn: "crypto.signOneShot", params: [DYN, DYN, DYN, DYN], result: DYN },
+    verify: { fn: "crypto.verifyOneShot", params: [DYN, DYN, DYN, DYN, DYN], result: DYN },
+    createSign: { fn: "crypto.signerNew", params: [BOOL, DYN, DYN], result: DYN },
+    createVerify: { fn: "crypto.signerNew", params: [BOOL, DYN, DYN], result: DYN },
   },
   zlib: {
     // The default-options convenience family is special-cased in
@@ -3052,12 +3060,6 @@ export const BUILTIN_MODULE_FENCE_HINTS: Record<
       [
         "generateKeyPair",
         "generateKeyPairSync",
-        "createPrivateKey",
-        "createPublicKey",
-        "createSign",
-        "createVerify",
-        "sign",
-        "verify",
         "createDiffieHellman",
         "createDiffieHellmanGroup",
         "getDiffieHellman",
@@ -3069,9 +3071,8 @@ export const BUILTIN_MODULE_FENCE_HINTS: Record<
         "privateDecrypt",
       ].map((m) => [
         m,
-        "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and " +
-          "public and private KeyObjects — neither exists in the static runtime, so no faithful lowering " +
-          "can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics",
+        "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, " +
+          "createSign, and createVerify support RSA and EC keys",
       ]),
     ),
     ...Object.fromEntries(

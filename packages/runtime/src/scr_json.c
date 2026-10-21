@@ -3380,7 +3380,10 @@ bool scr_dyn_util_type_is(const ScrDyn *value, const ScrStr *probe) {
   if (PROBE("isDate")) return value->kind == SCR_DYN_HANDLE && value->v.handle.tag == SCR_DYNH_DATE;
   if (PROBE("isMapIterator")) return scr_native_iterator_over(value, 2);
   if (PROBE("isSetIterator")) return scr_native_iterator_over(value, 3);
-  if (PROBE("isKeyObject")) return value->kind == SCR_DYN_HANDLE && value->v.handle.tag == SCR_DYNH_KEY_OBJECT;
+  if (PROBE("isKeyObject"))
+    return value->kind == SCR_DYN_HANDLE &&
+           (value->v.handle.tag == SCR_DYNH_KEY_OBJECT || value->v.handle.tag == SCR_DYNH_PRIVATE_KEY_OBJECT ||
+            value->v.handle.tag == SCR_DYNH_PUBLIC_KEY_OBJECT);
   /* Boxed primitives, BigInt64Array, BigUint64Array, CryptoKey and external
    * values cannot be created here, so no value has these brands. */
   if (PROBE("isNumberObject") || PROBE("isStringObject") || PROBE("isBooleanObject") ||

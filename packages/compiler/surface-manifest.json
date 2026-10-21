@@ -498,7 +498,7 @@
       "name": "crypto.createDiffieHellman",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.createDiffieHellmanGroup",
@@ -506,7 +506,7 @@
       "name": "crypto.createDiffieHellmanGroup",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.createECDH",
@@ -514,7 +514,7 @@
       "name": "crypto.createECDH",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.createHash",
@@ -532,17 +532,13 @@
       "id": "node-builtin.crypto.createPrivateKey",
       "kind": "node-builtin",
       "name": "crypto.createPrivateKey",
-      "status": "unsupported",
-      "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "status": "static"
     },
     {
       "id": "node-builtin.crypto.createPublicKey",
       "kind": "node-builtin",
       "name": "crypto.createPublicKey",
-      "status": "unsupported",
-      "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "status": "static"
     },
     {
       "id": "node-builtin.crypto.createSecretKey",
@@ -554,17 +550,13 @@
       "id": "node-builtin.crypto.createSign",
       "kind": "node-builtin",
       "name": "crypto.createSign",
-      "status": "unsupported",
-      "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "status": "static"
     },
     {
       "id": "node-builtin.crypto.createVerify",
       "kind": "node-builtin",
       "name": "crypto.createVerify",
-      "status": "unsupported",
-      "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "status": "static"
     },
     {
       "id": "node-builtin.crypto.diffieHellman",
@@ -572,7 +564,7 @@
       "name": "crypto.diffieHellman",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.generateKey",
@@ -586,7 +578,7 @@
       "name": "crypto.generateKeyPair",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.generateKeyPairSync",
@@ -594,7 +586,7 @@
       "name": "crypto.generateKeyPairSync",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.generateKeySync",
@@ -616,7 +608,7 @@
       "name": "crypto.getDiffieHellman",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.getRandomValues",
@@ -660,7 +652,7 @@
       "name": "crypto.privateDecrypt",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.privateEncrypt",
@@ -668,7 +660,7 @@
       "name": "crypto.privateEncrypt",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.publicDecrypt",
@@ -676,7 +668,7 @@
       "name": "crypto.publicDecrypt",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.publicEncrypt",
@@ -684,7 +676,7 @@
       "name": "crypto.publicEncrypt",
       "status": "unsupported",
       "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "note": "this asymmetric-key operation has no lowering; createPrivateKey, createPublicKey, sign, verify, createSign, and createVerify support RSA and EC keys"
     },
     {
       "id": "node-builtin.crypto.randomBytes",
@@ -746,9 +738,7 @@
       "id": "node-builtin.crypto.sign",
       "kind": "node-builtin",
       "name": "crypto.sign",
-      "status": "unsupported",
-      "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "status": "static"
     },
     {
       "id": "node-builtin.crypto.timingSafeEqual",
@@ -760,9 +750,7 @@
       "id": "node-builtin.crypto.verify",
       "kind": "node-builtin",
       "name": "crypto.verify",
-      "status": "unsupported",
-      "code": "SC2020",
-      "note": "asymmetric-key operations need a public-key stack (bignum, RSA/EC/EdDSA math) and public and private KeyObjects — neither exists in the static runtime, so no faithful lowering can be small; the lowered crypto surface is hashing, randomness, secret KeyObjects, and the introspection statics"
+      "status": "static"
     },
     {
       "id": "node-builtin.crypto.webcrypto",

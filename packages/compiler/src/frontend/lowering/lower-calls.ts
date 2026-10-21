@@ -137,6 +137,7 @@ import {
 import {
   isWebCryptoReceiver,
   lowerCipherMethodCall,
+  lowerSignerMethodCall,
   lowerCryptoGetRandomValues,
   lowerCryptoHashMethodCall,
   lowerPromisifiedCryptoCall,
@@ -1461,6 +1462,7 @@ export function lowerCall(lowerer: Lowerer, expr: ts.CallExpression): IrExpr {
       lowerHashStreamCall(lowerer, expr, expr.expression) ??
       lowerCryptoHashMethodCall(lowerer, expr, expr.expression) ??
       lowerCipherMethodCall(lowerer, expr, expr.expression) ??
+      lowerSignerMethodCall(lowerer, expr, expr.expression) ??
       lowerFileHandleMethodCall(lowerer, expr, expr.expression) ??
       lowerDirMethodCall(lowerer, expr, expr.expression) ??
       lowerer.lowerChildMethodCall(expr, expr.expression) ??

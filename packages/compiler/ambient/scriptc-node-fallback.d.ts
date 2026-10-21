@@ -2686,25 +2686,135 @@ declare module "crypto" {
   import { Transform } from "stream";
   export type KeyObjectType = "secret" | "public" | "private";
   export interface JsonWebKey {
-    kty?: string;
+    crv?: string;
+    d?: string;
+    dp?: string;
+    dq?: string;
+    e?: string;
     k?: string;
+    kty?: string;
+    n?: string;
+    p?: string;
+    q?: string;
+    qi?: string;
+    x?: string;
+    y?: string;
+    [key: string]: unknown;
   }
   export interface JwkKeyExportOptions {
     format: "jwk";
   }
-  export interface KeyExportOptions {
+  export type KeyFormat = "pem" | "der" | "jwk";
+  export interface KeyExportOptions<T extends KeyFormat = KeyFormat> {
+    type: "pkcs1" | "spki" | "pkcs8" | "sec1";
+    format: T;
+    cipher?: string | undefined;
+    passphrase?: string | Buffer | undefined;
+  }
+  export interface SecretKeyExportOptions {
     format?: "buffer" | undefined;
   }
-  /** Secret keys only; the asymmetric key types are not available. */
+  /** RSA keys report modulusLength and publicExponent; EC keys report
+   * namedCurve. */
+  export interface AsymmetricKeyDetails {
+    modulusLength?: number;
+    publicExponent?: bigint;
+    namedCurve?: string;
+  }
+  /** Secret keys, and RSA and EC public and private keys. */
   export class KeyObject {
     private constructor();
     type: KeyObjectType;
     symmetricKeySize?: number;
-    asymmetricKeyType?: string;
-    export(options?: KeyExportOptions): Buffer;
+    asymmetricKeyType?: "rsa" | "ec";
+    asymmetricKeyDetails?: AsymmetricKeyDetails;
+    export(options: KeyExportOptions<"pem">): string | Buffer;
+    export(options: KeyExportOptions<"der">): Buffer;
     export(options: JwkKeyExportOptions): JsonWebKey;
+    export(options?: SecretKeyExportOptions): Buffer;
     equals(otherKeyObject: KeyObject): boolean;
   }
+  export interface PrivateKeyInput {
+    key: string | Buffer;
+    format?: KeyFormat | undefined;
+    type?: "pkcs1" | "pkcs8" | "sec1" | undefined;
+    passphrase?: string | Buffer | undefined;
+    encoding?: string | undefined;
+  }
+  export interface PublicKeyInput {
+    key: string | Buffer;
+    format?: KeyFormat | undefined;
+    type?: "pkcs1" | "spki" | undefined;
+    encoding?: string | undefined;
+  }
+  export interface JsonWebKeyInput {
+    key: JsonWebKey;
+    format: "jwk";
+  }
+  export function createPrivateKey(
+    key: PrivateKeyInput | string | Buffer | JsonWebKeyInput,
+  ): KeyObject;
+  export function createPublicKey(
+    key: PublicKeyInput | string | Buffer | KeyObject | JsonWebKeyInput,
+  ): KeyObject;
+  export type DSAEncoding = "der" | "ieee-p1363";
+  export interface SigningOptions {
+    padding?: number | undefined;
+    saltLength?: number | undefined;
+    dsaEncoding?: DSAEncoding | undefined;
+  }
+  export interface SignPrivateKeyInput extends PrivateKeyInput, SigningOptions {}
+  export interface SignKeyObjectInput extends SigningOptions {
+    key: KeyObject;
+  }
+  export interface SignJsonWebKeyInput extends JsonWebKeyInput, SigningOptions {}
+  export interface VerifyPublicKeyInput extends PublicKeyInput, SigningOptions {}
+  export interface VerifyKeyObjectInput extends SigningOptions {
+    key: KeyObject;
+  }
+  export interface VerifyJsonWebKeyInput extends JsonWebKeyInput, SigningOptions {}
+  export type KeyLike = string | Buffer | KeyObject;
+  /** update(), sign() and verify(); the stream.Writable members are not
+   * declared. */
+  export class Sign {
+    private constructor();
+    update(data: BinaryLike): this;
+    update(data: string, inputEncoding: Encoding): this;
+    sign(
+      privateKey: KeyLike | SignKeyObjectInput | SignPrivateKeyInput | SignJsonWebKeyInput,
+    ): Buffer;
+    sign(
+      privateKey: KeyLike | SignKeyObjectInput | SignPrivateKeyInput | SignJsonWebKeyInput,
+      outputFormat: BinaryToTextEncoding,
+    ): string;
+  }
+  export class Verify {
+    private constructor();
+    update(data: BinaryLike): Verify;
+    update(data: string, inputEncoding: Encoding): Verify;
+    verify(
+      object: KeyLike | VerifyKeyObjectInput | VerifyPublicKeyInput | VerifyJsonWebKeyInput,
+      signature: ArrayBufferView,
+    ): boolean;
+    verify(
+      object: KeyLike | VerifyKeyObjectInput | VerifyPublicKeyInput | VerifyJsonWebKeyInput,
+      signature: string,
+      signatureEncoding?: BinaryToTextEncoding,
+    ): boolean;
+  }
+  export function createSign(algorithm: string): Sign;
+  export function createVerify(algorithm: string): Verify;
+  export function sign(
+    algorithm: string | null | undefined,
+    data: ArrayBufferView,
+    key: KeyLike | SignKeyObjectInput | SignPrivateKeyInput | SignJsonWebKeyInput,
+  ): Buffer;
+  export function verify(
+    algorithm: string | null | undefined,
+    data: ArrayBufferView,
+    key: KeyLike | VerifyKeyObjectInput | VerifyPublicKeyInput | VerifyJsonWebKeyInput,
+    signature: ArrayBufferView,
+  ): boolean;
   export function createSecretKey(key: ArrayBufferView | ArrayBufferLike): KeyObject;
   export function createSecretKey(key: string, encoding: BufferEncoding): KeyObject;
   export function generateKeySync(type: "hmac" | "aes", options: { length: number }): KeyObject;

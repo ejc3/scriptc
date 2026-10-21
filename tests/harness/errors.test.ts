@@ -1658,3 +1658,65 @@ console.log(util.inspect(extra));
     );
   });
 });
+
+// Key types, curves and options mbedTLS does not implement throw a coded
+// SC2020 Error where Node would read, sign or export the key.
+describe("unimplemented asymmetric keys", () => {
+  test("Ed25519, RSA-PSS and binary-curve keys, encrypted export and raw import throw SC2020", async () => {
+    const r = await compileAndRun(
+      "pkey-refusals",
+      `import { createPrivateKey, createPublicKey } from "node:crypto";
+const ed25519 = \`-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIJxJUZNjtkd2DMt/mFST0A1ih3ogTsYmr5LgRK/8aniK
+-----END PRIVATE KEY-----
+\`;
+const rsaPss = \`-----BEGIN PUBLIC KEY-----
+MIGdMAsGCSqGSIb3DQEBCgOBjQAwgYkCgYEAsxjV/ELSNLqVoqAYb7vzsy4rLviN
+eEXLEyHKpjoqKBD6dkRAhdp5erKpk0u8Uh5g/DxF3zwI31NcJvNVwr20cudFMpGU
+0MNNxCfvFe/ZchJYr4qoyPy3A+FTHOLKBb+7xuqg5jeF6PH93Nr4c6rm8TSN3gg+
+7TfTarEgVSTfe1UCAwEAAQ==
+-----END PUBLIC KEY-----
+\`;
+const sect163k1 = \`-----BEGIN PRIVATE KEY-----
+MGMCAQAwEAYHKoZIzj0CAQYFK4EEAAEETDBKAgEBBBUCUU0Kh2LfvSLgRVQwYWjJ
+Sh5FHLmhLgMsAAQDpYHNvUyAqdqGjI7JulfVbQGxXBwCVBFpiyooH8Xg1z+tNo8y
+MNOfcvg=
+-----END PRIVATE KEY-----
+\`;
+const prime256v1 = \`-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIG47D/R5x59oozeFFKzw2l2Q8iiLfTOWvJvsvgg+dD5voAoGCCqGSM49
+AwEHoUQDQgAEWy178rqIN9Zuud1QA7W7OFQ8sj7+RF6Vm7jxf3YGdc5yC2sH/nyu
+nOob6jMkc73PRvSGwbEW5p5cVz1zt7q6Rw==
+-----END EC PRIVATE KEY-----
+\`;
+function show(fn: () => unknown): void {
+  try {
+    fn();
+    console.log("no error");
+  } catch (error) {
+    const e = error as Error & { code?: string };
+    console.log(e.name, e.code, e.message);
+  }
+}
+show(() => createPrivateKey(ed25519));
+show(() => createPublicKey(rsaPss));
+show(() => createPrivateKey(sect163k1));
+show(() => createPrivateKey(prime256v1).export({ format: "pem", type: "pkcs8", cipher: "aes-256-cbc", passphrase: "x" }));
+show(() => createPublicKey({ key: Buffer.alloc(65), format: "raw-public", asymmetricKeyType: "ec", namedCurve: "prime256v1" } as never));
+show(() => createPrivateKey({ key: { kty: "OKP", crv: "Ed25519", x: "AA" }, format: "jwk" }));
+`,
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe(
+      "Error SC2020 Ed25519 keys have no native implementation; RSA and EC keys are supported\n" +
+        "Error SC2020 RSA-PSS keys have no native implementation; RSA and EC keys are supported\n" +
+        "Error SC2020 EC keys on this curve have no native implementation; the supported curves are " +
+        "prime256v1, secp384r1, secp521r1, secp256k1, secp224r1, prime192v1, secp192k1, secp224k1, " +
+        "brainpoolP256r1, brainpoolP384r1 and brainpoolP512r1\n" +
+        "Error SC2020 Encrypted key export (cipher and passphrase) has no native implementation\n" +
+        "Error SC2020 Raw key import (raw-public, raw-private, raw-seed) has no native implementation; use pem, der or jwk\n" +
+        "Error SC2020 OKP JWKs (Ed25519, Ed448, X25519, X448) have no native implementation; RSA and EC keys are supported\n",
+    );
+    expect(r.stderr).toBe("");
+  });
+});

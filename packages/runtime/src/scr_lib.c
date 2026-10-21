@@ -7859,35 +7859,6 @@ static size_t scr_sha512_final(const ScrSha512Ctx *source, unsigned char out[64]
   return len;
 }
 
-typedef enum ScrDigestAlg {
-  SCR_DIGEST_MD5,
-  SCR_DIGEST_SHA1,
-  SCR_DIGEST_SHA224,
-  SCR_DIGEST_SHA256,
-  SCR_DIGEST_SHA384,
-  SCR_DIGEST_SHA512,
-  SCR_DIGEST_SHA256_192,
-  SCR_DIGEST_SHA512_224,
-  SCR_DIGEST_SHA512_256,
-  SCR_DIGEST_SHA3_224,
-  SCR_DIGEST_SHA3_256,
-  SCR_DIGEST_SHA3_384,
-  SCR_DIGEST_SHA3_512,
-  SCR_DIGEST_KECCAK_224,
-  SCR_DIGEST_KECCAK_256,
-  SCR_DIGEST_KECCAK_384,
-  SCR_DIGEST_KECCAK_512,
-  SCR_DIGEST_SHAKE128,
-  SCR_DIGEST_SHAKE256,
-  SCR_DIGEST_KECCAK_KMAC128,
-  SCR_DIGEST_KECCAK_KMAC256,
-  SCR_DIGEST_RIPEMD160,
-  SCR_DIGEST_BLAKE2B512,
-  SCR_DIGEST_BLAKE2S256,
-  SCR_DIGEST_SM3,
-  SCR_DIGEST_MD5_SHA1,
-} ScrDigestAlg;
-
 /* Per algorithm: digest bytes (an XOF's default output length), HMAC
  * block bytes, and for the Keccak family its sponge rate and domain
  * padding. */
@@ -8263,6 +8234,50 @@ size_t scr_crypto_digest_raw(const char *alg, const unsigned char *data, size_t 
   scr_digest_init(&ctx, kind);
   scr_digest_update(&ctx, data, len);
   return scr_digest_final(&ctx, out);
+}
+
+/* The signing functions' getDigestByName also accepts the RSA signature
+ * aliases with trailing spaces. */
+int scr_crypto_digest_lookup(const char *name, size_t len) {
+  ScrDigestAlg alg;
+  if (scr_digest_alg(name, len, &alg)) return (int)alg;
+  const char *nul = memchr(name, '\0', len);
+  if (nul) len = (size_t)(nul - name);
+  while (len > 0 && name[len - 1] == ' ') len--;
+  return scr_digest_alg(name, len, &alg) ? (int)alg : -1;
+}
+
+size_t scr_crypto_digest_size(ScrDigestAlg alg) {
+  return scr_digest_info[alg].size;
+}
+
+bool scr_crypto_digest_is_xof(ScrDigestAlg alg) {
+  return scr_digest_info[alg].xof;
+}
+
+struct ScrCryptoDigest {
+  ScrDigestCtx ctx;
+};
+
+ScrCryptoDigest *scr_crypto_digest_new(ScrDigestAlg alg) {
+  ScrCryptoDigest *d = malloc(sizeof *d);
+  if (!d) scr_trap("scriptc: out of memory\n");
+  scr_digest_init(&d->ctx, alg);
+  return d;
+}
+
+void scr_crypto_digest_feed(ScrCryptoDigest *d, const unsigned char *data, size_t len) {
+  scr_digest_update(&d->ctx, data, len);
+}
+
+size_t scr_crypto_digest_finish(const ScrCryptoDigest *d, unsigned char out[64]) {
+  return scr_digest_final(&d->ctx, out);
+}
+
+void scr_crypto_digest_free(ScrCryptoDigest *d) {
+  if (!d) return;
+  scr_crypto_zero(d, sizeof *d);
+  free(d);
 }
 
 size_t scr_crypto_hmac_raw(const char *alg, const unsigned char *key, size_t keylen,
@@ -9156,6 +9171,8 @@ ScrCryptoHash *scr_crypto_hash_new_opts(ScrStr *alg, ScrDyn *options) {
   return hash;
 }
 
+static bool scr_crypto_key_object_type_mismatch(const ScrDyn *value, const char *expected);
+
 /* createHmac(algorithm, key, options): Node's options.encoding and
  * prepareSecretKey checks (a KeyObject's bytes are the key), then the
  * digest lookup. */
@@ -9189,6 +9206,8 @@ ScrCryptoHash *scr_crypto_hmac_new_dyn(ScrStr *alg, ScrDyn *key, ScrDyn *options
   if (key_object) {
     bytes = scr_bytes_new(SCR_BYTES_U8, (double)key_object_len);
     if (key_object_len) memcpy(bytes->data, key_object, key_object_len);
+  } else if (scr_crypto_key_object_type_mismatch(key, "secret")) {
+    return NULL;
   } else if (key->kind == SCR_DYN_STR) {
     ScrStr *utf8 = encoding ? NULL : scr_str_new("utf8", 4);
     bytes = scr_bytes_from_str_checked(key->v.str, encoding ? encoding : utf8);
@@ -9820,10 +9839,29 @@ const unsigned char *scr_key_object_bytes(const ScrDyn *value, size_t *len) {
   return key->data;
 }
 
-/* `value instanceof KeyObject`. */
+/* A private or public KeyObject (scr_pkey.c's handles). */
+bool scr_crypto_is_asymmetric_key(const ScrDyn *value) {
+  return value->kind == SCR_DYN_HANDLE && (value->v.handle.tag == SCR_DYNH_PRIVATE_KEY_OBJECT ||
+                                           value->v.handle.tag == SCR_DYNH_PUBLIC_KEY_OBJECT);
+}
+
+/* `value instanceof KeyObject`: a secret, private or public KeyObject. */
 bool scr_crypto_is_key_object(const ScrDyn *value) {
   size_t len;
-  return scr_key_object_bytes(value, &len) != NULL;
+  return scr_key_object_bytes(value, &len) != NULL || scr_crypto_is_asymmetric_key(value);
+}
+
+/* Set by scr_pkey.c when it creates its first asymmetric KeyObject, so
+ * the secret-key consumers here can report Node's
+ * ERR_CRYPTO_INVALID_KEY_OBJECT_TYPE without linking its text into every
+ * program. */
+bool (*scr_crypto_asymmetric_key_type_fail)(const ScrDyn *value, const char *expected);
+
+/* True after throwing ERR_CRYPTO_INVALID_KEY_OBJECT_TYPE when value is an
+ * asymmetric KeyObject. */
+static bool scr_crypto_key_object_type_mismatch(const ScrDyn *value, const char *expected) {
+  return scr_crypto_is_asymmetric_key(value) && scr_crypto_asymmetric_key_type_fail &&
+         scr_crypto_asymmetric_key_type_fail(value, expected);
 }
 
 static void scr_key_object_type_fail(const char *name, const ScrDyn *value) {
@@ -9885,6 +9923,7 @@ static ScrDyn *scr_key_object_invoke(void *h, ScrDyn *self, const char *method, 
   if (strcmp(method, "equals") == 0) {
     size_t len;
     const unsigned char *other = argc ? scr_key_object_bytes(args[0], &len) : NULL;
+    if (!other && argc && scr_crypto_is_asymmetric_key(args[0])) return scr_dyn_new_bool(false);
     if (!other) {
       ScrDyn *undefined = scr_dyn_undefined();
       scr_key_object_type_fail("otherKeyObject", argc ? args[0] : undefined);
@@ -10046,6 +10085,7 @@ ScrBytes *scr_crypto_key_object_input(ScrDyn *key) {
   size_t len;
   const unsigned char *data = scr_key_object_bytes(key, &len);
   if (!data) {
+    if (scr_crypto_key_object_type_mismatch(key, "secret")) return NULL;
     scr_key_object_type_fail("key", key);
     return NULL;
   }
