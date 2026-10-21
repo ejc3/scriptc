@@ -776,9 +776,9 @@
       "apiEntries": 67,
       "static": {
         "supported": 0,
-        "partial": 9,
+        "partial": 11,
         "refused": 4,
-        "not-implemented": 54,
+        "not-implemented": 52,
         "by-design": 0,
         "unreviewed": 0,
         "not-applicable": 0
@@ -95836,7 +95836,9 @@
           "tests/corpus/2331-tls-server-options-typed.ts",
           "tests/corpus/2500-net-autosel-timeout.ts",
           "tests/corpus/2557-tls-ca-store.ts",
-          "tests/corpus/2596-net-arg-ladders.cjs"
+          "tests/corpus/2596-net-arg-ladders.cjs",
+          "tests/corpus/6721-tls-alpn-protocols.ts",
+          "tests/corpus/6722-tls-min-max-version.ts"
         ]
       },
       "anchorSource": "chapter"
@@ -96837,8 +96839,11 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:tls"
+        "status": "partial",
+        "evidence": "compiler-feature:tls.tlsSocket.getProtocol",
+        "tests": [
+          "tests/corpus/6722-tls-min-max-version.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -97044,8 +97049,11 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:tls"
+        "status": "partial",
+        "evidence": "compiler-feature:tls.alpnProtocol",
+        "tests": [
+          "tests/corpus/6721-tls-alpn-protocols.ts"
+        ]
       },
       "anchorSource": "ancestor"
     },

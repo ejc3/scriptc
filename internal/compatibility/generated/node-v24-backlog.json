@@ -7,8 +7,8 @@
     "tierItemCount": 3454,
     "tiers": {
       "static": {
-        "audit-partial": 1197,
-        "verify-gap": 2130,
+        "audit-partial": 1199,
+        "verify-gap": 2128,
         "replace-refusal": 40,
         "classify": 2,
         "implement": 85
@@ -70393,12 +70393,14 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:tls",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-feature:tls.tlsSocket.getProtocol",
+          "tests": [
+            "tests/corpus/6722-tls-min-max-version.ts"
+          ]
         }
       }
     },
@@ -70618,12 +70620,14 @@
       "priority": "high",
       "tiers": {
         "static": {
-          "status": "not-implemented",
-          "action": "verify-gap",
-          "verification": "registry-gap",
-          "confidence": "low",
-          "source": "compiler-unmatched:tls",
-          "tests": []
+          "status": "partial",
+          "action": "audit-partial",
+          "verification": "test-backed",
+          "confidence": "high",
+          "source": "compiler-feature:tls.alpnProtocol",
+          "tests": [
+            "tests/corpus/6721-tls-alpn-protocols.ts"
+          ]
         }
       }
     },
