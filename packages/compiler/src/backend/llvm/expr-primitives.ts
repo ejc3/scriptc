@@ -1,7 +1,7 @@
 /* Focused LLVM expression emission extracted from emitter.ts. */
 import { InternalCompilerError } from "../../errors.js";
 import { matchStringSelfConcat, undefinedArmTag } from "../../ir/analysis.js";
-import { F64, isRefCounted, type IrExpr, type IrType } from "../../ir/ir.js";
+import { F64, isRefCounted, recordTextCodecClass, type IrExpr, type IrType } from "../../ir/ir.js";
 import { mangleRecordClone, mangleRecordNew } from "../mangle.js";
 import { arrNewCall, elemAccess } from "./shapes.js";
 import { LlvmUnsupportedError } from "./unsupported.js";
@@ -756,8 +756,11 @@ export function emitStringExpr(
       }
       if (v.type.kind === "record") {
         // String(record) / `${record}`: Object.prototype.toString's
-        // constant — the interned literal, retained like a strLit.
-        const sym = host.internLiteral("[object Object]");
+        // constant — the interned literal, retained like a strLit. A
+        // TextEncoder or TextDecoder answers its Symbol.toStringTag.
+        const shape = host.recordsById.get(v.type.shapeId);
+        const codec = shape ? recordTextCodecClass(shape) : null;
+        const sym = host.internLiteral(codec ? `[object ${codec}]` : "[object Object]");
         return host.own({ name: host.retainFrame(sym, e.type), type: e.type });
       }
       if (v.type.kind === "caught") {

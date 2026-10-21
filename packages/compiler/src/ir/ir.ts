@@ -3945,7 +3945,9 @@ function isJsonSafeAt(
     case "record": {
       const shape = getRecord(t.shapeId);
       if (!shape) return false;
-      if (recordTextCodecClass(shape) !== null) return false;
+      // A TextEncoder or TextDecoder has no own enumerable properties:
+      // JSON.stringify writes {} (emitRecordWriter).
+      if (recordTextCodecClass(shape) !== null) return stringify;
       // Accessor slots are not function-valued properties: Node's
       // JSON.stringify invokes the getter (see accessorSlotProp).
       if (shapeHasAccessorSlots(shape)) return false;

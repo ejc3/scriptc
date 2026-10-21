@@ -4591,6 +4591,11 @@ export const LIB_FN_SIGS = defineLibFnSignatures({
    * (+1) string; never throws. */
   "text.decodeLegacy": { argTypes: [BYTES_U8, F64], result: STRING },
   "text.decoderEncoding": { argTypes: [DYN], result: F64 },
+  /** TextDecoder options the compiler can't see (scr_bytes.c): the label
+   * with Node's validateObject between its conversion and its lookup, and
+   * the validation alone. Node's TypeErrors throw catchably. */
+  "text.decoderEncodingWith": { argTypes: [DYN, DYN], result: F64 },
+  "text.decoderOptionsCheck": { argTypes: [DYN], result: BOOL },
   "text.decoderName": { argTypes: [F64], result: STRING },
   "text.encodeInto": { argTypes: [DYN, DYN], result: DYN },
   "buffer.isAscii": { argTypes: [DYN], result: BOOL },

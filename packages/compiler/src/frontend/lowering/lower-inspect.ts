@@ -745,8 +745,11 @@ function inspectSupport(
       visiting.add(t.shapeId);
       const shape = lowerer.shapes.get(t.shapeId);
       if (!shape) return "this record shape has no inspect lowering";
-      const codec = recordTextCodecClass(shape);
-      if (codec !== null) return `${codec} instances have no inspect lowering yet`;
+      // TextEncoder and TextDecoder render through their custom inspect.
+      if (recordTextCodecClass(shape) !== null) {
+        visiting.delete(t.shapeId);
+        return null;
+      }
       // Accessor-carrying shapes: Node prints the accessor names as
       // `x: [Getter]` / `[Setter]` / `[Getter/Setter]` in insertion order
       // — a position the static field walk does not track (accessor slots
@@ -1405,6 +1408,59 @@ function inspectHelper(lowerer: Lowerer, t: IrType, loc: SrcLoc): string {
         type,
         loc,
       });
+      const codec = recordTextCodecClass(shape);
+      if (codec === "TextEncoder") {
+        // TextEncoder's custom inspect: `[TextEncoder]` past the depth
+        // limit, otherwise a plain object holding the encoding, rendered
+        // with the caller's options.
+        body = [
+          depthGate("[TextEncoder]"),
+          ...begin(),
+          entry(
+            concatAll([strLit("encoding: ", loc), child(STRING, strLit("utf-8", loc))], loc),
+            boolLit(false, loc),
+          ),
+          ret(end(strLit("", loc), strLit("{", loc), strLit("}", loc), false, boolLit(false, loc))),
+        ];
+        break;
+      }
+      if (codec === "TextDecoder") {
+        // TextDecoder's custom inspect: `[TextDecoder]` past the depth
+        // limit, otherwise the class name and its three properties,
+        // rendered with the default options (no colors, one line).
+        const flag = (field: string): IrExpr => ({
+          kind: "ternary",
+          cond: get(field, BOOL),
+          then: strLit("true", loc),
+          else_: strLit("false", loc),
+          type: STRING,
+          loc,
+        });
+        body = [
+          depthGate("[TextDecoder]"),
+          ret(
+            concatAll(
+              [
+                strLit("TextDecoder { encoding: '", loc),
+                {
+                  kind: "libCall",
+                  fn: "text.decoderName",
+                  args: [get("%TextDecoder", F64)],
+                  type: STRING,
+                  loc,
+                },
+                strLit("', fatal: ", loc),
+                flag("%fatal"),
+                strLit(", ignoreBOM: ", loc),
+                flag("%ignoreBOM"),
+                strLit(" }", loc),
+              ],
+              loc,
+            ),
+          ),
+        ];
+        break;
+      }
       if (isPerfEntryType(lowerer, t)) {
         // PerformanceEntry's custom inspect: `[PerformanceMark]` past the
         // depth budget, otherwise the class name and a nested inspect of
@@ -2620,6 +2676,13 @@ function formatOArg(lowerer: Lowerer, node: ts.Expression, depth: number, loc: S
       node,
       reason,
     );
+  if (depth === 4 && typeTreeHasTextDecoder(lowerer, value.type, new Set())) {
+    lowerer.noLowering(
+      "util.format %o of TextDecoder values",
+      node,
+      "%o renders with showHidden, which adds TextDecoder's internal symbol properties — use %O for the default rendering",
+    );
+  }
   if (depth === 4 && typeTreeHasArray(lowerer, value.type, new Set())) {
     lowerer.noLowering(
       "util.format %o over arrays",
@@ -3024,40 +3087,54 @@ export function lowerFormatCall(
   return concatAll(parts, loc);
 }
 
+/** TextDecoder records anywhere in the tree — the %o (showHidden) gate. */
+function typeTreeHasTextDecoder(lowerer: Lowerer, t: IrType, visiting: Set<string>): boolean {
+  return typeTreeSome(lowerer, t, visiting, (leaf) => {
+    if (leaf.kind !== "record") return false;
+    const shape = lowerer.shapes.get(leaf.shapeId);
+    return shape !== undefined && recordTextCodecClass(shape) === "TextDecoder";
+  });
+}
+
 /** Arrays anywhere in the tree — the %o (showHidden) gate. */
 function typeTreeHasArray(lowerer: Lowerer, t: IrType, visiting: Set<string>): boolean {
+  return typeTreeSome(lowerer, t, visiting, (leaf) => {
+    if (leaf.kind === "array" || leaf.kind === "bytes") return true;
+    return leaf.kind === "record" && lowerer.shapes.get(leaf.shapeId)?.tuple === true;
+  });
+}
+
+/** Whether `test` holds for a type or any type it holds. */
+function typeTreeSome(
+  lowerer: Lowerer,
+  t: IrType,
+  visiting: Set<string>,
+  test: (t: IrType) => boolean,
+): boolean {
+  if (test(t)) return true;
+  const some = (inner: IrType): boolean => typeTreeSome(lowerer, inner, visiting, test);
   switch (t.kind) {
     case "array":
-      return true;
+      return some(t.elem);
     case "record": {
       if (visiting.has(t.shapeId)) return false;
       visiting.add(t.shapeId);
-      const shape = lowerer.shapes.get(t.shapeId);
-      if (shape?.tuple) return true;
-      return (shape?.fields ?? []).some((f) => typeTreeHasArray(lowerer, f.type, visiting));
+      return (lowerer.shapes.get(t.shapeId)?.fields ?? []).some((f) => some(f.type));
     }
     case "map":
-      return (
-        typeTreeHasArray(lowerer, t.key, visiting) || typeTreeHasArray(lowerer, t.value, visiting)
-      );
+      return some(t.key) || some(t.value);
     case "set":
-      return typeTreeHasArray(lowerer, t.elem, visiting);
+      return some(t.elem);
     case "union": {
       if (visiting.has(t.unionId)) return false;
       visiting.add(t.unionId);
-      return (lowerer.unions.get(t.unionId)?.arms ?? []).some((a) =>
-        typeTreeHasArray(lowerer, a, visiting),
-      );
+      return (lowerer.unions.get(t.unionId)?.arms ?? []).some(some);
     }
     case "object": {
       if (visiting.has(t.className)) return false;
       visiting.add(t.className);
-      return (lowerer.classes.get(t.className)?.def.fields ?? []).some((f) =>
-        typeTreeHasArray(lowerer, f.type, visiting),
-      );
+      return (lowerer.classes.get(t.className)?.def.fields ?? []).some((f) => some(f.type));
     }
-    case "bytes":
-      return true;
     default:
       return false;
   }

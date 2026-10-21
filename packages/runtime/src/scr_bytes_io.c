@@ -1942,3 +1942,35 @@ bool scr_fs_stream_mode(const ScrDyn *value, double *mode) {
   }
   return scr_fs_cb_file_mode(value, "mode", mode);
 }
+
+/* validateObject(options, 'options', kValidateObjectAllowObjectsAndNull),
+ * as TextDecoder's constructor and decode() run it: an object, an array, a
+ * function or null passes; undefined is the default options object. False
+ * with the TypeError pending. */
+bool scr_text_decoder_options_check(const ScrDyn *options) {
+  if (!options || options->kind == SCR_DYN_UNDEF || options->kind == SCR_DYN_NULL) return true;
+  if (scr_dyn_is_object(options)) return true;
+  scr_dyn_arg_type_fail("options", "of type object", options);
+  return false;
+}
+
+/* new TextDecoder(label, options) with an options value the compiler can't
+ * see: the label's string conversion, then the options' validation, then
+ * the label lookup, in Node's order. -1 is UTF-8, or an exception pending. */
+double scr_text_decoder_encoding_with(const ScrDyn *label, const ScrDyn *options) {
+  if (!label || label->kind == SCR_DYN_UNDEF) {
+    scr_text_decoder_options_check(options);
+    return -1;
+  }
+  ScrStr *text = scr_dyn_string_coerce_js(label);
+  if (!text) return -1;
+  if (!scr_text_decoder_options_check(options)) {
+    scr_str_release(text);
+    return -1;
+  }
+  ScrDyn *converted = scr_dyn_new_str(text);
+  scr_str_release(text);
+  double encoding = scr_text_decoder_encoding(converted);
+  scr_dyn_release(converted);
+  return encoding;
+}

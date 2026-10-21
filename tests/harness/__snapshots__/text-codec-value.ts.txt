@@ -1,10 +1,3 @@
-text-codec-value.ts:2:13 - error SC1090: console.log of 'TextEncoder' values (TextEncoder instances have no inspect lowering yet) are not supported yet
-
-  1 | const encoder = new TextEncoder();
-  2 | console.log(encoder);
-    |             ^~~~~~~
-  3 | 
-
 text-codec-value.ts:17:5 - error SC2020: 'uninitialized lexical codec bindings' is part of the standard library types but has no scriptc lowering yet
 
   16 | var varEncoder = new TextEncoder();

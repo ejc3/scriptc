@@ -54,6 +54,8 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "cp.spawnDynamic",
   "child.onDyn",
   "text.decoderEncoding",
+  "text.decoderEncodingWith",
+  "text.decoderOptionsCheck",
   "strdec.encoding",
   "dyn.construct",
   "dyn.reflectApply",

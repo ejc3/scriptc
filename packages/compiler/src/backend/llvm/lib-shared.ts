@@ -550,6 +550,8 @@ export const LIB_FN_SYMS: Record<string, string> = {
   "text.decodeLegacyOptions": "scr_text_decode_legacy_options",
   "text.decodeLegacy": "scr_text_decode_legacy",
   "text.decoderEncoding": "scr_text_decoder_encoding",
+  "text.decoderEncodingWith": "scr_text_decoder_encoding_with",
+  "text.decoderOptionsCheck": "scr_text_decoder_options_check",
   "text.decoderName": "scr_text_decoder_name",
   "text.encodeInto": "scr_text_encode_into",
   "buffer.isAscii": "scr_buffer_is_ascii",

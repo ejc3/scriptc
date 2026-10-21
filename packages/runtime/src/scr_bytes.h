@@ -348,6 +348,8 @@ ScrStr *scr_bytes_to_str_checked_range(const ScrBytes *b, const ScrStr *enc, dou
  * stripped. Borrows; +1; never throws. */
 ScrStr *scr_text_decode(const ScrBytes *b);
 double scr_text_decoder_encoding(const ScrDyn *label);
+bool scr_text_decoder_options_check(const ScrDyn *options);
+double scr_text_decoder_encoding_with(const ScrDyn *label, const ScrDyn *options);
 ScrStr *scr_text_decoder_name(double encoding);
 ScrDyn *scr_text_encode_into(const ScrDyn *source, const ScrDyn *destination);
 bool scr_buffer_is_ascii(const ScrDyn *input);

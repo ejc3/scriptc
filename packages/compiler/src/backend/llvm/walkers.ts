@@ -15,7 +15,7 @@ import { InternalCompilerError } from "../../errors.js";
  * jsonStringify emission site runs the pending check (join still walks
  * only f64/string/bool/unit arms — the frontend's fence). */
 import type { IrRecordShape, IrType, IrUnionDef } from "../../ir/ir.js";
-import { isRefCounted, typeKey } from "../../ir/ir.js";
+import { isRefCounted, recordTextCodecClass, typeKey } from "../../ir/ir.js";
 import { jsonObjectKeyLabel } from "../json-literal.js";
 import { llvmBytes, wtf8Bytes } from "../literals.js";
 import { mangleRecordStruct } from "../mangle.js";
@@ -285,6 +285,13 @@ export class LlWalkers {
       throw new InternalCompilerError(
         `llvm emitter bug: jsonStringify of unknown shape ${shapeId}`,
       );
+    // A TextEncoder or TextDecoder holds only internal state: JSON.stringify
+    // writes {}, as it does for Node's codecs.
+    if (recordTextCodecClass(shape) !== null) {
+      this.putc(B, "%b", "123"); // '{'
+      this.putc(B, "%b", "125"); // '}'
+      return;
+    }
     const fieldBase = this.host.nullableUnions.fieldBase(shapeId);
     const fieldIndex = new Map(shape.fields.map((f, i) => [f.name, i + fieldBase]));
     if (recordMayKeepSource(shape)) this.emitRecordSourceWriter(B, shapeId);

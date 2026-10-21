@@ -69,6 +69,7 @@ import {
   funcOf,
   isDynTypedRefType,
   isUnitType,
+  recordTextCodecClass,
   shapeHasAccessorSlots,
   typeEquals,
   RUNTIME_EMITTER_CLASS,
@@ -4661,7 +4662,15 @@ function lowerDefaultToStringCall(
   if (recvT.kind === "record" && isPerfEntryType(lowerer, recvT)) {
     return perfEntryTag(lowerer, lowerer.lowerExpr(access.expression), recvT, loc);
   }
-  const constant: IrExpr = { kind: "strLit", value: "[object Object]", type: STRING, loc };
+  // A TextEncoder or TextDecoder answers its Symbol.toStringTag.
+  const codecShape = recvT.kind === "record" ? lowerer.shapes.get(recvT.shapeId) : undefined;
+  const codec = codecShape ? recordTextCodecClass(codecShape) : null;
+  const constant: IrExpr = {
+    kind: "strLit",
+    value: codec ? `[object ${codec}]` : "[object Object]",
+    type: STRING,
+    loc,
+  };
   // `(<A>{}).toString()` — assertion-wrapped literals and plain reads
   // have nothing to evaluate; pureObjectToStringReceiver widens
   // pureReceiverNode with the empty object literal.

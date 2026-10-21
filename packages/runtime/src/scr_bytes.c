@@ -1687,6 +1687,26 @@ static uint32_t scr_td_gb_range(uint32_t pointer) {
   return 0;
 }
 
+/* Set while a streaming decode runs: a multi-byte decoder that ends inside
+ * a sequence leaves its bytes for the next chunk and stores their count
+ * here, instead of ending the sequence with a replacement. */
+static SCR_TL size_t *scr_td_held = NULL;
+/* During a streaming decode, how many leading bytes came from earlier chunks,
+ * and whether a malformed sequence had to restore one of them. Node's ICU
+ * converter does not decode such a sequence as the one-shot decode does, so
+ * the decode refuses it. */
+static SCR_TL size_t scr_td_carried = 0;
+static SCR_TL bool scr_td_restores_carried = false;
+
+static void scr_td_restore_from(size_t pos) {
+  if (scr_td_held && pos < scr_td_carried) scr_td_restores_carried = true;
+}
+
+static void scr_td_end_pending(ScrTdOut *out, size_t pending) {
+  if (scr_td_held) *scr_td_held = pending;
+  else scr_td_error(out);
+}
+
 /* A tiny prepend stack models the Encoding Standard's I/O queue restore.
  * The gb18030 decoder is the only legacy decoder which can restore three
  * bytes after discovering a malformed four-byte sequence. */
@@ -1694,9 +1714,12 @@ static ScrStr *scr_td_gb18030_decode(const ScrBytes *b, bool fatal) {
   ScrTdOut out = scr_td_out_new(b->len);
   uint8_t first = 0, second = 0, third = 0;
   uint8_t replay[3];
+  size_t replay_pos[3];
   size_t replay_len = 0;
+  size_t second_pos = 0, third_pos = 0;
   size_t i = 0;
   while (i < b->len || replay_len > 0) {
+    size_t pos = replay_len ? replay_pos[replay_len - 1] : i;
     uint8_t byte = replay_len ? replay[--replay_len] : b->data[i++];
     if (third) {
       uint32_t cp = 0;
@@ -1716,8 +1739,12 @@ static ScrStr *scr_td_gb18030_decode(const ScrBytes *b, bool fatal) {
          * is consumed as one error. Only a malformed fourth byte restores
          * the preceding payload bytes to Node's input queue. */
         if (!valid_fourth) {
+          scr_td_restore_from(second_pos);
+          replay_pos[replay_len] = pos;
           replay[replay_len++] = byte;
+          replay_pos[replay_len] = third_pos;
           replay[replay_len++] = old_third;
+          replay_pos[replay_len] = second_pos;
           replay[replay_len++] = old_second;
         }
       }
@@ -1726,11 +1753,15 @@ static ScrStr *scr_td_gb18030_decode(const ScrBytes *b, bool fatal) {
     if (second) {
       if (byte >= 0x81 && byte <= 0xfe) {
         third = byte;
+        third_pos = pos;
       } else {
         uint8_t old_second = second;
         first = second = 0;
         scr_td_error(&out);
+        scr_td_restore_from(second_pos);
+        replay_pos[replay_len] = pos;
         replay[replay_len++] = byte;
+        replay_pos[replay_len] = second_pos;
         replay[replay_len++] = old_second;
       }
       continue;
@@ -1738,6 +1769,7 @@ static ScrStr *scr_td_gb18030_decode(const ScrBytes *b, bool fatal) {
     if (first) {
       if (byte >= 0x30 && byte <= 0x39) {
         second = byte;
+        second_pos = pos;
         continue;
       }
       uint8_t lead = first;
@@ -1762,7 +1794,7 @@ static ScrStr *scr_td_gb18030_decode(const ScrBytes *b, bool fatal) {
     else if (byte >= 0x81 && byte <= 0xfe) first = byte;
     else scr_td_error(&out);
   }
-  if (first || second || third) scr_td_error(&out);
+  if (first || second || third) scr_td_end_pending(&out, (first ? 1 : 0) + (second ? 1 : 0) + (third ? 1 : 0));
   return scr_td_finish(&out, fatal);
 }
 
@@ -1791,7 +1823,7 @@ static ScrStr *scr_td_big5_decode(const ScrBytes *b, bool fatal) {
     else if (byte == 0xff) scr_td_put(&out, 0xf8f8); /* ICU/Node mapping */
     else scr_td_error(&out);
   }
-  if (lead) scr_td_error(&out);
+  if (lead) scr_td_end_pending(&out, 1);
   return scr_td_finish(&out, fatal);
 }
 
@@ -1836,6 +1868,7 @@ static ScrStr *scr_td_euc_jp_decode(const ScrBytes *b, bool fatal) {
         jis0212 = false;
         lead = old_lead;
         scr_td_error(&out);
+        if (i > 0) scr_td_restore_from(i - 1);
         i--;
         continue;
       }
@@ -1854,7 +1887,7 @@ static ScrStr *scr_td_euc_jp_decode(const ScrBytes *b, bool fatal) {
     else if (byte == 0x8e || byte == 0x8f || (byte >= 0xa1 && byte <= 0xfe)) lead = byte;
     else scr_td_error(&out);
   }
-  if (lead) scr_td_error(&out);
+  if (lead) scr_td_end_pending(&out, jis0212 ? 2 : 1);
   return scr_td_finish(&out, fatal);
 }
 
@@ -1891,7 +1924,7 @@ static ScrStr *scr_td_shift_jis_decode(const ScrBytes *b, bool fatal) {
     else if ((byte >= 0x81 && byte <= 0x9f) || (byte >= 0xe0 && byte <= 0xfc)) lead = byte;
     else scr_td_error(&out);
   }
-  if (lead) scr_td_error(&out);
+  if (lead) scr_td_end_pending(&out, 1);
   return scr_td_finish(&out, fatal);
 }
 
@@ -1917,7 +1950,7 @@ static ScrStr *scr_td_euc_kr_decode(const ScrBytes *b, bool fatal) {
     else if (byte >= 0xa1 && byte <= 0xfe) lead = byte;
     else scr_td_error(&out);
   }
-  if (lead) scr_td_error(&out);
+  if (lead) scr_td_end_pending(&out, 1);
   return scr_td_finish(&out, fatal);
 }
 
@@ -2168,11 +2201,35 @@ ScrStr *scr_text_decode_stream(ScrDyn *state, const ScrBytes *input,
       if (unit >= 0xd800 && unit <= 0xdbff) hold += 2;
     }
   }
-  if (stream && encoding >= SCR_TD_GB18030) {
+  if (stream && (unsigned)encoding == SCR_TD_ISO_2022_JP) {
     scr_bytes_release(combined);
-    static const char message[] = "Streaming TextDecoder for this legacy encoding has no native lowering";
+    static const char message[] = "Streaming TextDecoder for ISO-2022-JP has no native lowering";
     scr_throw_error_msg_code(SCR_ERR_ERROR, message, sizeof message - 1, "SC2020");
     return NULL;
+  }
+  /* The multi-byte decoders find where their last sequence starts: the
+   * bytes from there wait for the next chunk. */
+  if (stream && encoding >= SCR_TD_GB18030) {
+    size_t held = 0;
+    scr_td_held = &held;
+    scr_td_carried = pending;
+    scr_td_restores_carried = false;
+    ScrStr *result = scr_text_decode_legacy_options(combined, encoding, fatal, ignore_bom || seen_bom);
+    scr_td_held = NULL;
+    if (scr_td_restores_carried) {
+      if (result) scr_str_release(result);
+      scr_bytes_release(combined);
+      static const char message[] =
+          "Streaming TextDecoder over a malformed sequence that starts in an earlier chunk has no native lowering";
+      scr_throw_error_msg_code(SCR_ERR_ERROR, message, sizeof message - 1, "SC2020");
+      return NULL;
+    }
+    ScrBytes *tail = scr_bytes_new(SCR_BYTES_U8, (double)held);
+    if (held) memcpy(tail->data, combined->data + combined->len - held, held);
+    scr_dyn_obj_set(state, "pending", 7, scr_dyn_new_bytes(tail));
+    scr_bytes_release(tail);
+    scr_bytes_release(combined);
+    return result;
   }
 #endif
   size_t complete = combined->len - hold;
