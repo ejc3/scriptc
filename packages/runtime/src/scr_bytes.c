@@ -428,14 +428,14 @@ static void scr_sizing_disposed(void *object) {
 }
 
 /* The new view is constructed like `new T(buffer, offset[, count])`, so it
- * throws Node's RangeErrors when the storage no longer covers it. A
- * length-tracking receiver with no end (an omitted end arrives as
- * +Infinity) gives a length-tracking view. */
-static bool scr_sizing_subarray(ScrBytes *b, size_t s, size_t count, double end, size_t *fixed_len) {
+ * throws Node's RangeErrors when the storage no longer covers it. With
+ * `tail` (TypedArray.prototype.subarray with an undefined end), a
+ * length-tracking receiver gives a length-tracking view. */
+static bool scr_sizing_subarray(ScrBytes *b, size_t s, size_t count, bool tail, size_t *fixed_len) {
   ScrBytes *owner = b->backing ? b->backing : b;
   size_t width = scr_bytes_elem_size(b->elem);
   size_t offset = (size_t)(b->data - owner->data) + s * width;
-  bool tracking = b->backing && scr_sizing_of(b)->fixed_len == SCR_BYTES_TRACKING && end == INFINITY;
+  bool tracking = tail && b->backing && scr_sizing_of(b)->fixed_len == SCR_BYTES_TRACKING;
   static const char start_message[] = "Start offset %zu is outside the bounds of the buffer";
   static const char length_message[] = "Invalid typed array length: %zu";
   char msg[96];
@@ -992,14 +992,11 @@ ScrBytes *scr_bytes_fill_elem(ScrBytes *b, double v, double start, double end) {
  * in JS (mutations are visible both ways; buffer-swap through a slice is
  * the canonical Node use). Chain depth stays exactly 1: a subarray of a
  * view retains the OWNER, offsets composed here (the DataView rule).
- * Relative indices clamp like slice; never throws. */
-ScrBytes *scr_bytes_subarray(ScrBytes *b, double start, double end) {
-  size_t s = scr_bytes_rel_index(start, b->len);
-  size_t e = scr_bytes_rel_index(end, b->len);
-  size_t count = e > s ? e - s : 0;
+ * Elements [s, s + count); `tail` as in scr_sizing_subarray. */
+static ScrBytes *scr_bytes_subarray_at(ScrBytes *b, size_t s, size_t count, bool tail) {
   ScrBytes *owner = b->backing ? b->backing : b;
   size_t fixed_len = count;
-  if (b->sized && !scr_bytes_resizable->subarray(b, s, count, end, &fixed_len)) return NULL;
+  if (b->sized && !scr_bytes_resizable->subarray(b, s, count, tail, &fixed_len)) return NULL;
   ScrBytes *v = malloc(sizeof(ScrBytes));
   if (!v) scr_bytes_oom();
   v->rc = 1;
@@ -1019,8 +1016,32 @@ ScrBytes *scr_bytes_subarray(ScrBytes *b, double start, double end) {
   return v;
 }
 
+/* Relative indices clamp like slice. A view of resizable storage gets a
+ * fixed length. */
+ScrBytes *scr_bytes_subarray(ScrBytes *b, double start, double end) {
+  size_t s = scr_bytes_rel_index(start, b->len);
+  size_t e = scr_bytes_rel_index(end, b->len);
+  return scr_bytes_subarray_at(b, s, e > s ? e - s : 0, false);
+}
+
+/* Buffer's subarray() and slice() compute a fixed length; the typed
+ * arrays' subarray() of a length-tracking view tracks too. */
+ScrBytes *scr_bytes_subarray_tail(ScrBytes *b, double start) {
+  size_t s = scr_bytes_rel_index(start, b->len);
+  return scr_bytes_subarray_at(b, s, b->len - s, !b->is_buffer);
+}
+
+/* false after throwing Node's TypeError for a set() target or source out of
+ * bounds of its resizable storage. */
+static bool scr_bytes_set_view_valid(const ScrBytes *b) {
+  return !b->sized || scr_bytes_resizable->check(b, SCR_VIEW_METHOD, "set");
+}
+
+/* Node's order: a negative offset, then a target out of bounds, then a
+ * source out of bounds, then a source too long for the target. */
 void scr_bytes_set_from(ScrBytes *dst, const ScrBytes *src, double offset) {
   double t = (offset != offset) ? 0 : trunc(offset);
+  if (t >= 0 && (!scr_bytes_set_view_valid(dst) || !scr_bytes_set_view_valid(src))) return;
   if (!(t >= 0) || (double)src->len + t > (double)dst->len) {
     static const char msg[] = "offset is out of bounds";
     scr_throw_error_msg(SCR_ERR_RANGE, msg, sizeof msg - 1);
@@ -1190,6 +1211,7 @@ void scr_bytes_set_from_dyn(ScrBytes *dst, const ScrDyn *src, double offset) {
     scr_throw_error_msg(SCR_ERR_RANGE, msg, sizeof msg - 1);
     return;
   }
+  if (!scr_bytes_set_view_valid(dst)) return;
   if (src->kind == SCR_DYN_TYPED_REF) {
     ScrDyn *view = scr_dyn_typed_ref_materialize(src);
     if (view->kind == SCR_DYN_BYTES || view->kind == SCR_DYN_ARR) scr_bytes_set_from_dyn(dst, view, t);

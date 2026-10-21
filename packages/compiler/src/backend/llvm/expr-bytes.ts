@@ -673,7 +673,16 @@ export function emitBytesIntrinsic(
     case "subarray":
       // A +1 VIEW aliasing the receiver's storage (subarray / Buffer's
       // slice); same index defaults as slice. A view of resizable storage
-      // can throw a RangeError.
+      // can throw a RangeError, and without an end it can track the
+      // receiver's length.
+      if (host.mod.resizableBuffers && !args[1])
+        return call(
+          "scr_bytes_subarray_tail",
+          "ptr (ptr, double)",
+          `ptr ${r.name}, double ${args[0]?.name ?? f64Lit(0)}`,
+          true,
+          true,
+        );
       return call(
         "scr_bytes_subarray",
         "ptr (ptr, double, double)",

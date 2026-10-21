@@ -56,3 +56,29 @@ buf.resize(4);
   expect(calls(llvm, "scr_bytes_view_byte_offset")).toBe(1);
   expect(calls(llvm, "scr_bytes_byte_offset")).toBe(0);
 });
+
+test("subarray with an undefined end takes the form that can track the receiver's length", async () => {
+  const llvm = await emit(`${views}
+const end = (n?: number): Uint8Array => view.subarray(1, n);
+console.log(view.subarray(1).length, view.subarray(1, undefined).length);
+console.log(view.subarray(1, Infinity).length, end().length, end(3).length);
+buf.resize(4);
+`);
+  // subarray(1), subarray(1, undefined) and the undefined arm of `n`.
+  expect(calls(llvm, "scr_bytes_subarray_tail")).toBe(3);
+  // subarray(1, Infinity) and the number arm of `n`.
+  expect(calls(llvm, "scr_bytes_subarray")).toBe(2);
+});
+
+test("a computed key that can be resize counts as resizing a buffer", async () => {
+  const resizing = await emit(`${views}
+const key: string = process.argv.length > 99 ? "slice" : "resize";
+((buf as unknown as Record<string, unknown>)[key] as (this: ArrayBuffer, n: number) => void).call(buf, 4);
+`);
+  expect(calls(resizing, "scr_bytes_validate")).toBe(3);
+  const other = await emit(`${views}
+const key = process.argv.length > 99 ? "slice" : "transfer";
+console.log(typeof (buf as unknown as Record<string, unknown>)[key]);
+`);
+  expect(calls(other, "scr_bytes_validate")).toBe(0);
+});

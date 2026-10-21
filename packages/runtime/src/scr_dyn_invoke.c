@@ -1579,9 +1579,10 @@ static ScrDyn *scr_dyn_invoke_impl(
       return NULL;
     }
     /* A typed array out of bounds of its resizable storage: its methods
-     * throw before reading their arguments. Buffer's own methods and
-     * subarray keep their checks. */
-    if (bytes->sized && !recv->buffer && !scr_bytes_resizable->check(bytes, SCR_VIEW_METHOD, method))
+     * throw before reading their arguments. Buffer's own methods,
+     * subarray and set keep their own checks. */
+    if (bytes->sized && !recv->buffer && !dyn_name_is(method, "set") &&
+        !scr_bytes_resizable->check(bytes, SCR_VIEW_METHOD, method))
       return NULL;
     size_t blen = bytes->len;
     if (dyn_name_is(method, "at")) {
@@ -1596,12 +1597,15 @@ static ScrDyn *scr_dyn_invoke_impl(
        * owns an independent copy; all keep the receiver's Buffer flavor. */
       double startD = dyn_bytes_index_arg(args, argc, 0, 0);
       if (scr_exc_pending()) return NULL;
-      /* An omitted end arrives as +Infinity, as on the static path: subarray
-       * of a length-tracking view then tracks too. */
+      /* An undefined end gives the typed arrays' length-tracking form;
+       * Buffer's subarray and slice compute a fixed length. */
+      bool tail = argc < 2 || args[1]->kind == SCR_DYN_UNDEF;
       double endD = dyn_bytes_index_arg(args, argc, 1, INFINITY);
       if (scr_exc_pending()) return NULL;
-      ScrBytes *out = recv->buffer || dyn_name_is(method, "subarray")
-        ? scr_bytes_subarray(bytes, startD, endD) : scr_bytes_slice(bytes, startD, endD);
+      ScrBytes *out = !recv->buffer && !dyn_name_is(method, "subarray")
+        ? scr_bytes_slice(bytes, startD, endD)
+        : tail && !recv->buffer ? scr_bytes_subarray_tail(bytes, startD)
+        : scr_bytes_subarray(bytes, startD, endD);
       if (!out) return NULL;
       ScrDyn *d = recv->buffer ? scr_dyn_new_buffer(out) : scr_dyn_new_bytes(out);
       scr_bytes_release(out);

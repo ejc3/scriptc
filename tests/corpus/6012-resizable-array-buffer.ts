@@ -135,3 +135,44 @@ for (const _ of new Uint8Array(step)) {
   if (shrinkSteps === 2) step.resize(3);
 }
 console.log("shrink", shrinkSteps);
+const ends = new ArrayBuffer(4, { maxByteLength: 16 });
+const endsView = new Uint8Array(ends);
+const optionalEnd = (end?: number): Uint8Array => endsView.subarray(1, end);
+const endViews = [
+  endsView.subarray(1),
+  endsView.subarray(1, undefined),
+  endsView.subarray(1, Infinity),
+  endsView.subarray(1, 1 / 0),
+  optionalEnd(),
+  optionalEnd(Infinity),
+  optionalEnd(3),
+];
+ends.resize(8);
+console.log("subarray ends", endViews.map((v) => v.length).join());
+const bufferBacked = Buffer.from(ends);
+const bufferViews = [
+  bufferBacked.subarray(2),
+  bufferBacked.slice(2),
+  bufferBacked.subarray(),
+  bufferBacked.subarray(1, undefined),
+];
+ends.resize(12);
+console.log("buffer subarray", bufferBacked.length, bufferViews.map((v) => v.length).join());
+const setStorage = new ArrayBuffer(8, { maxByteLength: 16 });
+const setSource = new Uint8Array(setStorage, 4, 4);
+const setTarget = new Uint8Array(setStorage, 4, 4);
+const floatSource = new Float32Array(setStorage, 0, 2);
+const plainTarget = new Uint8Array(8);
+new Uint8Array(setStorage).fill(5);
+setStorage.resize(4);
+report("set source out of bounds", () => plainTarget.set(setSource));
+report("set source out of bounds offset", () => plainTarget.set(setSource, 1));
+report("set negative offset", () => setTarget.set(setSource, -1));
+report("set target out of bounds", () => setTarget.set(new Uint8Array(1)));
+report("set array target out of bounds", () => setTarget.set([1]));
+report("set float source", () => new Float64Array(4).set(floatSource));
+report("set too long", () => new Uint8Array(2).set(new Uint8Array(setStorage)));
+report("set tracking source", () => {
+  plainTarget.set(new Uint8Array(setStorage), 4);
+  return plainTarget.join();
+});

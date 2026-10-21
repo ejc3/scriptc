@@ -335,8 +335,12 @@ ScrBytes *scr_bytes_fill_elem(ScrBytes *b, double v, double start, double end); 
  * deprecated alias: a same-elem VIEW aliasing the receiver's storage
  * (mutations visible both ways, JS-exactly). The view retains the OWNER
  * (chain depth exactly 1, the DataView rule) and its byteOffset composes.
- * Same index clamping as slice; never throws. */
+ * Same index clamping as slice. Throws Node's RangeError only when the
+ * receiver is a view of resizable storage that no longer covers the result. */
 ScrBytes *scr_bytes_subarray(ScrBytes *b, double start, double end); /* +1 */
+/* subarray(start) with an undefined end: of a length-tracking typed array,
+ * a length-tracking view. */
+ScrBytes *scr_bytes_subarray_tail(ScrBytes *b, double start); /* +1 */
 /* The sizing record of resizable storage or a view of it; NULL for every
  * other ScrBytes. */
 ScrBytesSizing *scr_bytes_sizing(const ScrBytes *b);
@@ -357,8 +361,9 @@ typedef struct ScrBytesResizableOps {
   /* Links view `v` of a sized owner; `fixed_len` is its requested length. */
   void (*link)(ScrBytes *owner, ScrBytes *v, size_t fixed_len);
   /* subarray of sized `b` from element `s`, `count` elements: false after
-   * throwing Node's RangeError; otherwise the new view's requested length. */
-  bool (*subarray)(ScrBytes *b, size_t s, size_t count, double end, size_t *fixed_len);
+   * throwing Node's RangeError; otherwise the new view's requested length.
+   * `tail`: the typed arrays' subarray with an undefined end. */
+  bool (*subarray)(ScrBytes *b, size_t s, size_t count, bool tail, size_t *fixed_len);
   /* Sets the requested element length of a sized typed view. */
   void (*retrack)(ScrBytes *view, size_t fixed_len);
   /* Resizes a sized owner: zeroes exposed bytes and updates every view. */

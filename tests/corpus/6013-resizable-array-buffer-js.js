@@ -61,3 +61,23 @@ report("tracking subarray", () => [tracked.length, same(new Uint8Array(g)).subar
 const cut = same(new Uint8Array(g, 4, 2));
 g.resize(2);
 report("subarray out of bounds", () => cut.subarray(0));
+const e = new ArrayBuffer(4, { maxByteLength: 16 });
+const ev = same(new Uint8Array(e));
+const endViews = [ev.subarray(1), ev.subarray(1, undefined), ev.subarray(1, Infinity), ev.subarray(1, same(undefined))];
+e.resize(8);
+report("subarray ends", () => endViews.map((x) => x.length));
+const eb = same(Buffer.from(e));
+const bufferViews = [eb.subarray(2), eb.slice(2), eb.subarray(), eb.subarray(1, undefined)];
+e.resize(12);
+report("buffer subarray", () => [eb.length, bufferViews.map((x) => x.length)]);
+const st = new ArrayBuffer(8, { maxByteLength: 16 });
+const src = same(new Uint8Array(st, 4, 4));
+const target = same(new Uint8Array(8));
+st.resize(4);
+report("set source out of bounds", () => target.set(src));
+report("set negative offset", () => src.set(src, -1));
+report("set target out of bounds", () => src.set([1]));
+report("set tracking source", () => {
+  target.set(same(new Uint8Array(st)), 4);
+  return target.join();
+});

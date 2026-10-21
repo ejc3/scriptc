@@ -154,8 +154,10 @@ function lowerBytesSortCall(
 
 /** Whether any source can reach ArrayBuffer.prototype.resize: a `resize`
  * member read (`x.resize`, `x["resize"]`, `{ resize } = x`) on a receiver
- * typed ArrayBuffer or untyped. Without one, a typed array's length never
- * changes after construction. */
+ * typed ArrayBuffer or untyped. When a source mentions `maxByteLength`, a
+ * computed key that can be "resize" (`x[key]`, `{ [key]: f } = x`) counts
+ * too. Without one, a typed array's length never changes after
+ * construction. */
 export function resizableBuffersReachable(lowerer: Lowerer): boolean {
   if (lowerer.resizableBuffersReachable !== null) return lowerer.resizableBuffersReachable;
   let reachable = false;
@@ -163,16 +165,34 @@ export function resizableBuffersReachable(lowerer: Lowerer): boolean {
     const kind = lowerer.mapTypeOf(lowerer.checker.getTypeAtLocation(receiver))?.kind;
     return kind === undefined || kind === "dyn";
   };
-  for (const file of lowerer.program.getSourceFiles()) {
-    if (file.isDeclarationFile || !file.text.includes("resize")) continue;
+  const files = lowerer.program.getSourceFiles().filter((file) => !file.isDeclarationFile);
+  const computedKeys = files.some((file) => file.text.includes("maxByteLength"));
+  const mayNameResize = (key: ts.Expression): boolean => {
+    if (ts.isStringLiteralLike(key)) return key.text === "resize";
+    const type = lowerer.checker.getTypeAtLocation(key);
+    return (type.isUnionType() ? ts.constituentTypes(type) : [type]).some((part) =>
+      part.isStringLiteralType()
+        ? part.value === "resize"
+        : (part.flags &
+            (ts.TypeFlags.String |
+              ts.TypeFlags.TemplateLiteral |
+              ts.TypeFlags.StringMapping |
+              ts.TypeFlags.Any |
+              ts.TypeFlags.Unknown)) !==
+          0,
+    );
+  };
+  for (const file of files) {
+    if (!computedKeys && !file.text.includes("resize")) continue;
     ts.walkPreorder(file, (node) => {
       if (reachable) return "skip";
       if (ts.isPropertyAccessExpression(node) && node.name.text === "resize")
         reachable = dynamicReceiver(node.expression);
       else if (
         ts.isElementAccessExpression(node) &&
-        ts.isStringLiteralLike(node.argumentExpression) &&
-        node.argumentExpression.text === "resize"
+        (ts.isStringLiteralLike(node.argumentExpression)
+          ? node.argumentExpression.text === "resize"
+          : computedKeys && mayNameResize(node.argumentExpression))
       )
         reachable = dynamicReceiver(node.expression);
       else if (
@@ -180,6 +200,10 @@ export function resizableBuffersReachable(lowerer: Lowerer): boolean {
         ((node.propertyName &&
           ts.isIdentifier(node.propertyName) &&
           node.propertyName.text === "resize") ||
+          (computedKeys &&
+            node.propertyName &&
+            ts.isComputedPropertyName(node.propertyName) &&
+            mayNameResize(node.propertyName.expression)) ||
           (!node.propertyName && ts.isIdentifier(node.name) && node.name.text === "resize"))
       )
         reachable = true;
@@ -499,10 +523,10 @@ export function lowerBytesMethodCall(
 
 /** The label of a typed-array or DataView method that requires its view
  * in bounds, as Node's TypeError spells it. Null for Buffer's own methods
- * and for subarray, which keep their own checks. */
+ * and for subarray and set, which keep their own checks. */
 function viewMethodLabel(lowerer: Lowerer, access: ts.PropertyAccessExpression): string | null {
   const name = access.name.text;
-  if (name === "subarray") return null;
+  if (name === "subarray" || name === "set") return null;
   const symbol = lowerer.checker.getSymbolAtLocation(access.name);
   const declarations = symbol ? symbol.declarations : [];
   const owners = declarations.flatMap((d) =>
@@ -578,14 +602,8 @@ export function withViewCheck(lowerer: Lowerer, op: IrExpr, label: string): IrEx
     return op;
   const loc = op.loc;
   const stmts: IrStmt[] = [];
-  const hoist = (e: IrExpr): IrExpr => {
-    if (e.kind === "strLit" || e.kind === "numLit" || e.kind === "boolLit") return e;
-    const local = lowerer.declareHiddenLocal("%viewOperand", e.type);
-    stmts.push({ kind: "varDecl", localId: local.id, init: e, loc });
-    return { kind: "varRef", localId: local.id, type: e.type, loc };
-  };
   const operands = op.kind === "bytesIntrinsic" ? [op.receiver, ...op.args] : op.args;
-  const [receiver, ...args] = operands.map(hoist);
+  const [receiver, ...args] = operands.map((e) => hoistViewOperand(lowerer, stmts, e));
   stmts.push({
     kind: "exprStmt",
     expr: {
@@ -603,6 +621,76 @@ export function withViewCheck(lowerer: Lowerer, op: IrExpr, label: string): IrEx
       ? { ...op, receiver: receiver!, args }
       : { ...op, args: [receiver!, ...args] };
   return { kind: "seqExpr", stmts, result, type: op.type, loc };
+}
+
+/** `e` evaluated once into a hidden local declared by `stmts`; literals
+ * stay in place. */
+function hoistViewOperand(lowerer: Lowerer, stmts: IrStmt[], e: IrExpr): IrExpr {
+  if (e.kind === "strLit" || e.kind === "numLit" || e.kind === "boolLit") return e;
+  const local = lowerer.declareHiddenLocal("%viewOperand", e.type);
+  stmts.push({ kind: "varDecl", localId: local.id, init: e, loc: e.loc });
+  return { kind: "varRef", localId: local.id, type: e.type, loc: e.loc };
+}
+
+/** `subarray(start, end)` in a program that can resize a buffer. An
+ * undefined end gives the one-argument form, whose view of a
+ * length-tracking typed array tracks too; a number end gives a
+ * fixed-length view. The receiver, start and end are evaluated in order. */
+function lowerResizableSubarray(
+  lowerer: Lowerer,
+  receiver: IrExpr,
+  start: IrExpr,
+  endNode: ts.Expression,
+  type: IrType,
+  loc: SrcLoc,
+): IrExpr {
+  const subarray = (recv: IrExpr, args: IrExpr[]): IrExpr => ({
+    kind: "bytesIntrinsic",
+    method: "subarray",
+    receiver: recv,
+    args,
+    type,
+    loc,
+  });
+  const stmts: IrStmt[] = [];
+  const undefinedEnd = lowerStaticallyUndefinedArgument(lowerer, endNode);
+  if (undefinedEnd !== null) {
+    if (isSafeToDiscard(undefinedEnd)) return subarray(receiver, [start]);
+    const recv = hoistViewOperand(lowerer, stmts, receiver);
+    const args = [hoistViewOperand(lowerer, stmts, start)];
+    stmts.push({ kind: "exprStmt", expr: undefinedEnd, loc });
+    return { kind: "seqExpr", stmts, result: subarray(recv, args), type, loc };
+  }
+  const end = lowerer.lowerExpr(endNode);
+  const arms = end.type.kind === "union" ? lowerer.unions.get(end.type.unionId)?.arms : undefined;
+  const undefinedTag = arms ? arms.findIndex((arm) => arm.kind === "undefinedT") : -1;
+  const numberTag = arms ? arms.findIndex((arm) => typeEquals(arm, F64)) : -1;
+  if (end.type.kind !== "union" || arms?.length !== 2 || undefinedTag < 0 || numberTag < 0)
+    return subarray(receiver, [start, lowerer.coerceInto(endNode, end, F64)]);
+  const unionId = end.type.unionId;
+  const recv = hoistViewOperand(lowerer, stmts, receiver);
+  const from = hoistViewOperand(lowerer, stmts, start);
+  const value = hoistViewOperand(lowerer, stmts, end);
+  const result: IrExpr = {
+    kind: "ternary",
+    cond: {
+      kind: "unionIsTag",
+      unionId,
+      tag: undefinedTag,
+      value,
+      negated: false,
+      type: BOOL,
+      loc,
+    },
+    then: subarray(recv, [from]),
+    else_: subarray(recv, [
+      from,
+      { kind: "unionNarrow", unionId, tag: numberTag, value, type: F64, loc },
+    ]),
+    type,
+    loc,
+  };
+  return { kind: "seqExpr", stmts, result, type, loc };
 }
 
 function lowerBytesMethodCallUnchecked(
@@ -712,6 +800,22 @@ function lowerBytesMethodCallUnchecked(
       lowerer.noLowering(`.${name} with ${nArgs} arguments on typed arrays`, call);
     }
     const receiver = lowerer.lowerExprExpecting(access.expression, receiverIr);
+    if (name === "subarray" && nArgs === 2 && resizableBuffersReachable(lowerer)) {
+      const start = lowerOptionalArgument(lowerer, call.arguments.nodes[0]!, F64, {
+        kind: "numLit",
+        value: 0,
+        type: F64,
+        loc,
+      });
+      return lowerResizableSubarray(
+        lowerer,
+        receiver,
+        start,
+        call.arguments.nodes[1]!,
+        receiverIr,
+        loc,
+      );
+    }
     // A missing start is 0 and a missing end is the length (+Infinity
     // clamps to it), as for omitted arguments.
     const args = call.arguments.nodes.map((a, i) =>
