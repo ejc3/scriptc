@@ -7008,25 +7008,90 @@ static void scr_error_dyn_add_stack(ScrDyn *d) {
   entry->enumerable = false;
 }
 
+/* The prototypes of errors held as any, one per error class name and
+ * thread, so errors of one class share theirs, as in Node. Each holds the
+ * class's `name` and an empty `message`, both non-enumerable, and every
+ * class other than Error chains to Error's. */
+typedef struct {
+  ScrStr *name;
+  ScrDyn *prototype;
+} ScrErrorPrototype;
+
+static SCR_TL ScrErrorPrototype *scr_error_prototypes;
+static SCR_TL size_t scr_error_prototype_count, scr_error_prototype_cap;
+
+static void scr_error_prototypes_cleanup(void) {
+  for (size_t i = 0; i < scr_error_prototype_count; i++) {
+    scr_str_release(scr_error_prototypes[i].name);
+    scr_dyn_release(scr_error_prototypes[i].prototype);
+  }
+  free(scr_error_prototypes);
+  scr_error_prototypes = NULL;
+  scr_error_prototype_count = scr_error_prototype_cap = 0;
+}
+
+/* The shared prototype of errors named `name` (borrowed). */
+static ScrDyn *scr_error_prototype(ScrStr *name) {
+  for (size_t i = 0; i < scr_error_prototype_count; i++) {
+    ScrStr *known = scr_error_prototypes[i].name;
+    if (known->len == name->len && memcmp(known->data, name->data, name->len) == 0)
+      return scr_error_prototypes[i].prototype;
+  }
+  bool base = name->len == 5 && memcmp(name->data, "Error", 5) == 0;
+  ScrDyn *parent = NULL;
+  if (!base) {
+    ScrStr *error_name = scr_str_new("Error", 5);
+    parent = scr_error_prototype(error_name);
+    scr_str_release(error_name);
+  }
+  if (scr_error_prototype_count == scr_error_prototype_cap) {
+    size_t cap = scr_error_prototype_cap ? scr_error_prototype_cap * 2 : 8;
+    ScrErrorPrototype *grown = realloc(scr_error_prototypes, cap * sizeof *grown);
+    if (!grown) scr_json_oom();
+    if (scr_error_prototype_cap == 0) scr_atexit(scr_error_prototypes_cleanup);
+    scr_error_prototypes = grown;
+    scr_error_prototype_cap = cap;
+  }
+  ScrDyn *prototype = scr_dyn_new_obj();
+  scr_dyn_obj_set(prototype, "name", 4, scr_dyn_new_str(name));
+  prototype->v.obj.entries[prototype->v.obj.len - 1].enumerable = false;
+  ScrStr *empty = scr_str_new("", 0);
+  scr_dyn_obj_set(prototype, "message", 7, scr_dyn_new_str(empty));
+  scr_str_release(empty);
+  prototype->v.obj.entries[prototype->v.obj.len - 1].enumerable = false;
+  if (parent) {
+    scr_dyn_region_store(prototype, parent);
+    prototype->prototype = scr_dyn_retain(parent);
+  }
+  scr_error_prototypes[scr_error_prototype_count++] = (ScrErrorPrototype){ scr_str_retain(name), prototype };
+  return prototype;
+}
+
 ScrDyn *scr_error_dyn_fields(const ScrError *e) {
   ScrDyn *d = scr_dyn_new_obj();
   scr_dyn_obj_set(d, "%error", 6, scr_dyn_new_bool(true)); /* the checked-dynamic tree's error marker */
   d->v.obj.entries[d->v.obj.len - 1].enumerable = false;
   /* Node lists `stack` first among an error's own properties. */
   scr_error_dyn_add_stack(d);
-  if (!e->name_present || !e->message_present) {
-    ScrDyn *prototype = scr_dyn_new_obj();
+  /* An own name shadows its class's, which the prototype holds. */
+  ScrStr *class_name = e->name_present ? scr_error_default_name(e) : scr_str_retain(e->name);
+  ScrDyn *prototype = scr_dyn_retain(scr_error_prototype(class_name));
+  scr_str_release(class_name);
+  if (!e->message_present && e->message->len > 0) {
+    /* A message the prototype answers (a DOMException's): this error's
+     * own prototype holds it and the name, over its class's. */
+    ScrDyn *own = scr_dyn_new_obj();
     if (!e->name_present) {
-      scr_dyn_obj_set(prototype, "name", 4, scr_dyn_new_str(e->name));
-      prototype->v.obj.entries[prototype->v.obj.len - 1].enumerable = false;
+      scr_dyn_obj_set(own, "name", 4, scr_dyn_new_str(e->name));
+      own->v.obj.entries[own->v.obj.len - 1].enumerable = false;
     }
-    if (!e->message_present) {
-      scr_dyn_obj_set(prototype, "message", 7, scr_dyn_new_str(e->message));
-      prototype->v.obj.entries[prototype->v.obj.len - 1].enumerable = false;
-    }
-    scr_dyn_release(scr_dyn_set_prototype(d, prototype));
-    scr_dyn_release(prototype);
+    scr_dyn_obj_set(own, "message", 7, scr_dyn_new_str(e->message));
+    own->v.obj.entries[own->v.obj.len - 1].enumerable = false;
+    own->prototype = prototype;
+    prototype = own;
   }
+  scr_dyn_region_store(d, prototype);
+  d->prototype = prototype;
   if (e->message_present) {
     scr_dyn_obj_set(d, "message", 7, scr_dyn_new_str(e->message));
     d->v.obj.entries[d->v.obj.len - 1].enumerable = e->message_enumerable;
