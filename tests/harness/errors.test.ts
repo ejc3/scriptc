@@ -333,6 +333,36 @@ console.log(two(1, 2, effectful()));
   });
 
   test.each([
+    { label: "typed array", name: "undefined-key-bytes-write", target: "new Float64Array(4)" },
+    { label: "array", name: "undefined-key-array-write", target: "[0, 0, 0, 0]" },
+  ])(
+    "an element write with an undefined key is a named deferred fence ($label)",
+    async ({ name, target }) => {
+      // A for-of over an array with a hole yields undefined, and JavaScript
+      // writes a property named "undefined", which compiled arrays and typed
+      // arrays do not hold. Defined keys write elements (corpus 1622).
+      const r = await compileAndRun(
+        name,
+        `const keys: number[] = [1];
+keys[2] = 3;
+const values = ${target};
+for (const key of keys) {
+  console.log(key);
+  values[key] = 9;
+}
+`,
+      );
+      expect(r.exitCode).toBe(1);
+      expect(r.stdout).toBe("1\nundefined\n");
+      expect(r.stderr).toMatch(
+        new RegExp(
+          `^Uncaught Error: an element write with an undefined key .* is not supported yet \\[SC1090 at .*${name}\\.ts:6\\]\n$`,
+        ),
+      );
+    },
+  );
+
+  test.each([
     {
       label: "Array.from",
       name: "array-from-length-elements",
