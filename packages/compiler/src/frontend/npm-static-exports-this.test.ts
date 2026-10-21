@@ -55,10 +55,14 @@ test("other uses of `this`, replaced exports and detached functions keep their t
   expect(rewrite(`exports.f = function () { return this.missing; };\n`)).toBeNull();
   // The exports object replaced.
   expect(
-    rewrite(`exports.f = function () { return this.g(); };\nexports.g = function () { return 1; };\nmodule.exports = { f: exports.f };\n`),
+    rewrite(
+      `exports.f = function () { return this.g(); };\nexports.g = function () { return 1; };\nmodule.exports = { f: exports.f };\n`,
+    ),
   ).toBeNull();
   // The function handed elsewhere inside the module.
   expect(
-    rewrite(`exports.f = function () { return this.g(); };\nexports.g = function () { return 1; };\nsetTimeout(exports.f, 0);\n`),
+    rewrite(
+      `exports.f = function () { return this.g(); };\nexports.g = function () { return 1; };\nsetTimeout(exports.f, 0);\n`,
+    ),
   ).toBeNull();
 });

@@ -456,8 +456,7 @@ export function npmStaticFsShadow(services: FrontendServices): NpmStaticFsShadow
           const aliased = original === null ? null : services.builtinAliasRequires(original, path);
           if (aliased !== null) original = aliased;
           // Exported functions that reach sibling exports through `this`.
-          const exportsThis =
-            original === null ? null : services.exportsThis(original, path);
+          const exportsThis = original === null ? null : services.exportsThis(original, path);
           if (exportsThis !== null) original = exportsThis;
           // tsc's interop helpers around builtin modules.
           const tscHelpers = original === null ? null : services.tscBuiltinImports(original, path);

@@ -55,7 +55,11 @@ export function rewriteExportsThis(sf: ts.SourceFile): string | null {
   }
   ts.walkPreorder(sf, (n) => {
     if (replaced) return "stop";
-    if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+    if (
+      ts.isBinaryExpression(n) &&
+      n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      n.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+    ) {
       const left = unparen(n.left);
       if (ts.isIdentifier(left) && left.text === "exports") replaced = true;
       if (
@@ -76,7 +80,7 @@ export function rewriteExportsThis(sf: ts.SourceFile): string | null {
     let ok = true;
     const walk = (n: ts.Node): void => {
       if (!ok) return;
-      if (n !== fn && (ts.isFunctionLike(n) && !ts.isArrowFunction(n))) return;
+      if (n !== fn && ts.isFunctionLike(n) && !ts.isArrowFunction(n)) return;
       if (ts.isClassDeclaration(n) || ts.isClassExpression(n)) return;
       if (n.kind === ts.SyntaxKind.ThisKeyword) {
         const parent = n.parent;
@@ -101,7 +105,8 @@ export function rewriteExportsThis(sf: ts.SourceFile): string | null {
     let detached = false;
     ts.walkPreorder(sf, (n) => {
       if (detached) return "stop";
-      if (!ts.isPropertyAccessExpression(n) || !ts.isIdentifier(n.name) || n.name.text !== name) return undefined;
+      if (!ts.isPropertyAccessExpression(n) || !ts.isIdentifier(n.name) || n.name.text !== name)
+        return undefined;
       if (exportsMember(n) !== name) return undefined;
       const parent = n.parent;
       const isStore =
@@ -114,7 +119,8 @@ export function rewriteExportsThis(sf: ts.SourceFile): string | null {
       return undefined;
     });
     if (detached) continue;
-    for (const use of uses) edits.push({ start: use.getStart(sf), end: use.getEnd(), text: "exports" });
+    for (const use of uses)
+      edits.push({ start: use.getStart(sf), end: use.getEnd(), text: "exports" });
   }
   if (edits.length === 0) return null;
   return applyEdits(sf.text, 0, sf.text.length, edits);
