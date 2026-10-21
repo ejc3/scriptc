@@ -24,7 +24,7 @@ import {
   isUnitType,
   typeKey,
 } from "../../../ir/ir.js";
-import { optionalStringTags } from "./arguments.js";
+import { optionalStringTags, stripTypeCasts } from "./arguments.js";
 import { type BuiltinModuleFn } from "../surfaces.js";
 import { lowerDynDispatchMethodCall } from "../lower-calls.js";
 
@@ -817,7 +817,11 @@ export function lowerLegacyUrlCall(
   loc: SrcLoc,
 ): IrExpr {
   const arity =
-    bi.member === "parse" ? 3 : bi.member === "format" || bi.member === "resolve" ? 2 : 1;
+    bi.member === "parse"
+      ? 3
+      : bi.member === "format" || bi.member === "resolve" || bi.member === "resolveObject"
+        ? 2
+        : 1;
   if (expr.arguments.nodes.some(ts.isSpreadElement) || expr.arguments.nodes.length > arity) {
     lowerer.noLowering(
       `url.${bi.member} with these arguments`,
@@ -864,4 +868,35 @@ export function isSearchParamsIterable(lowerer: Lowerer, node: ts.Expression): b
     (name === "keys" || name === "values" || name === "entries") &&
     lowerer.mapTypeOf(lowerer.typeOf(node.expression.expression))?.kind === "searchParams"
   );
+}
+
+/** Whether `node` names node:url's legacy Url class: an import of `Url`
+ * from node:url, or `url.Url` through a module binding. */
+export function isLegacyUrlClass(lowerer: Lowerer, node: ts.Expression): boolean {
+  const callee = stripTypeCasts(node);
+  const builtin = ts.isIdentifier(callee)
+    ? lowerer.builtinImportOf(callee)
+    : ts.isPropertyAccessExpression(callee)
+      ? lowerer.builtinMemberOf(callee)
+      : null;
+  return builtin !== null && builtin.module === "url" && builtin.member === "Url";
+}
+
+/** `new url.Url()`: a Url whose parts are all null. Node's constructor
+ * takes no arguments. */
+export function lowerLegacyUrlNew(lowerer: Lowerer, expr: ts.NewExpression, loc: SrcLoc): IrExpr {
+  if ((expr.arguments?.nodes.length ?? 0) > 0) {
+    lowerer.noLowering("new url.Url with arguments", expr, "call new url.Url() without arguments");
+  }
+  return { kind: "libCall", fn: "url.legacyNew", args: [], type: DYN, loc };
+}
+
+/** `value instanceof url.Url`: Url.prototype on the value's prototype chain. */
+export function lowerLegacyUrlInstanceOf(
+  lowerer: Lowerer,
+  expr: ts.BinaryExpression,
+  loc: SrcLoc,
+): IrExpr {
+  const value = lowerer.coerceInto(expr.left, lowerer.lowerExpr(expr.left), DYN);
+  return { kind: "libCall", fn: "url.legacyIsUrl", args: [value], type: BOOL, loc };
 }

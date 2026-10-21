@@ -982,6 +982,12 @@ export const LIB_FN_SIGS = defineLibFnSignatures({
   "url.legacyParse": { argTypes: [DYN, DYN, DYN, BOOL], result: DYN },
   "url.legacyFormat": { argTypes: [DYN, DYN, BOOL], result: STRING },
   "url.legacyResolve": { argTypes: [DYN, DYN, BOOL], result: STRING },
+  /** url.resolveObject(source, relative) answers relative for a falsy
+   * source, else a new Url; new url.Url() answers an empty Url;
+   * legacyIsUrl is `value instanceof url.Url`. */
+  "url.legacyResolveObject": { argTypes: [DYN, DYN, BOOL], result: DYN },
+  "url.legacyNew": { argTypes: [], result: DYN },
+  "url.legacyIsUrl": { argTypes: [DYN], result: BOOL },
   "url.domainToASCII": { argTypes: [DYN, BOOL], result: STRING },
   "url.domainToUnicode": { argTypes: [DYN, BOOL], result: STRING },
   /** node:punycode (scr_url.c): punycode.js 2.1.0's string conversions;

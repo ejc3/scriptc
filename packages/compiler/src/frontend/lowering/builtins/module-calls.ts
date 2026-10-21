@@ -202,7 +202,9 @@ export function lowerBuiltinModuleCall(
   }
   if (
     bi.module === "url" &&
-    ["parse", "format", "resolve", "domainToASCII", "domainToUnicode"].includes(bi.member)
+    ["parse", "format", "resolve", "resolveObject", "domainToASCII", "domainToUnicode"].includes(
+      bi.member,
+    )
   ) {
     return lowerLegacyUrlCall(lowerer, expr, bi, fn, loc);
   }

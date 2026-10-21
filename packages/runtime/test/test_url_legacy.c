@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 long scr_str_live_count(void); /* provided by scr_string.c */
 
@@ -133,10 +134,27 @@ static void check(ScrStr *got, const char *expected_text, const char *kind, cons
   scr_str_release(got);
 }
 
+static long total_cases = 0, failed_cases = 0;
+static bool bad_input = false;
+
+/* Registered first, so it runs after the runtime's own exit teardowns
+ * (the error property cache among them) have released what they hold. */
+static void report(void) {
+#ifdef SCR_RC_AUDIT
+  if (scr_str_live_count() != 0) {
+    fprintf(stderr, "live strings at exit: %ld\n", scr_str_live_count());
+    failed_cases++;
+  }
+#endif
+  fprintf(stderr, "%ld/%ld cases passed\n", total_cases - failed_cases, total_cases);
+  _exit(bad_input ? 2 : failed_cases == 0 ? 0 : 1);
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) return 2;
   FILE *f = fopen(argv[1], "r");
   if (!f) return 2;
+  atexit(report);
   static char line[1 << 20];
   ScrDyn *no = scr_dyn_new_bool(false);
   ScrDyn *yes = scr_dyn_new_bool(true);
@@ -191,18 +209,14 @@ int main(int argc, char **argv) {
       scr_str_release(to);
     } else {
       fprintf(stderr, "bad line: %s\n", kind);
+      bad_input = true;
       return 2;
     }
   }
   fclose(f);
   scr_dyn_release(no);
   scr_dyn_release(yes);
-#ifdef SCR_RC_AUDIT
-  if (scr_str_live_count() != 0) {
-    fprintf(stderr, "live strings at exit: %ld\n", scr_str_live_count());
-    failed++;
-  }
-#endif
-  fprintf(stderr, "%ld/%ld cases passed\n", total - failed, total);
-  return failed == 0 ? 0 : 1;
+  total_cases = total;
+  failed_cases = failed;
+  return 0;
 }

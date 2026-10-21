@@ -114,8 +114,17 @@ static bool lu_regex_space(uint32_t c) {
          c == 0x205F || c == 0x3000 || c == 0xFEFF;
 }
 
+/* The url string the running parse() was given (borrowed): Node's
+ * ERR_INVALID_URL carries it as `input`. */
+static SCR_TL const ScrStr *lu_parse_input = NULL;
+
 static void lu_throw_invalid_url(void) {
-  scr_throw_error_msg_code(SCR_ERR_TYPE, "Invalid URL", 11, "ERR_INVALID_URL");
+  ScrStr *message = scr_str_new("Invalid URL", 11);
+  ScrError *e = scr_error_new(SCR_ERR_TYPE, message);
+  scr_str_release(message);
+  scr_error_set_code(e, "ERR_INVALID_URL");
+  if (lu_parse_input) scr_error_set_prop(e, "input", 5, scr_dyn_new_str((ScrStr *)lu_parse_input));
+  scr_throw_obj(e, &scr_error_retain_v, &scr_error_release_v, scr_error_trace_arg());
 }
 
 /* ── the Url record ────────────────────────────────────────────────── */
@@ -329,7 +338,19 @@ static bool lu_host_forbidden(const ScrStr *h, bool ipv6) {
 
 /* Url.prototype.parse(url, parseQueryString, slashesDenoteHost) over an
  * empty record. False with an error pending. */
+static bool lu_parse_record(LegacyUrl *self, const ScrStr *url, bool parse_query,
+                            bool slashes_denote_host);
+
 static bool lu_parse(LegacyUrl *self, const ScrStr *url, bool parse_query, bool slashes_denote_host) {
+  const ScrStr *outer = lu_parse_input;
+  lu_parse_input = url;
+  bool ok = lu_parse_record(self, url, parse_query, slashes_denote_host);
+  lu_parse_input = outer;
+  return ok;
+}
+
+static bool lu_parse_record(LegacyUrl *self, const ScrStr *url, bool parse_query,
+                            bool slashes_denote_host) {
   const char *s = url->data;
   size_t n = url->len;
   /* Trim (C0 controls, space, U+00A0, U+FEFF) and turn backslashes before
@@ -699,6 +720,12 @@ done:
 /* ── checked-dynamic boundary ──────────────────────────────────────── */
 
 static ScrDyn *lu_box(const ScrStr *s) { return s ? scr_dyn_new_str((ScrStr *)s) : scr_dyn_new_null(); }
+/* A string node over a string it takes. */
+static ScrDyn *lu_box_owned(ScrStr *s) {
+  ScrDyn *boxed = scr_dyn_new_str(s);
+  scr_str_release(s);
+  return boxed;
+}
 
 static SCR_TL ScrDyn *lu_prototype = NULL;
 static ScrDyn *lu_url_prototype(void);
@@ -898,7 +925,7 @@ static ScrDyn *lu_proto_format(ScrClosure *closure, ScrDyn *const *args, size_t 
     char message[64];
     int n = snprintf(message, sizeof message, "Cannot read properties of %s (reading 'auth')",
                      o->kind == SCR_DYN_UNDEF ? "undefined" : "null");
-    scr_throw_error_msg_code(SCR_ERR_TYPE, message, (size_t)n, NULL);
+    scr_throw_error_msg(SCR_ERR_TYPE, message, (size_t)n);
   } else if (o->kind == SCR_DYN_OBJ || o->kind == SCR_DYN_TYPED_REF) {
     out = lu_format_object(o);
   } else {
@@ -912,29 +939,227 @@ static ScrDyn *lu_proto_format(ScrClosure *closure, ScrDyn *const *args, size_t 
   return boxed;
 }
 
-static ScrDyn *lu_proto_fenced(const char *method) {
+/* A Url method on a receiver or argument it can't handle: a value of
+ * another shape than the Url records url.parse() and new Url() give. */
+static ScrDyn *lu_fence(const char *method, const char *what) {
   ScrJsonBuf message;
   scr_jb_init(&message);
   scr_jb_puts(&message, "Url.prototype.");
   scr_jb_puts(&message, method);
-  scr_jb_puts(&message, " has no lowering; use url.parse, url.format or url.resolve");
+  scr_jb_puts(&message, " on ");
+  scr_jb_puts(&message, what);
+  scr_jb_puts(&message, " has no lowering");
   ScrStr *text = scr_jb_finish(&message);
   scr_throw_error_msg_code(SCR_ERR_ERROR, text->data, text->len, "SC2020");
   scr_str_release(text);
   return NULL;
 }
 
-#define LU_FENCED_METHOD(name)                                                     \
-  static ScrDyn *lu_proto_##name(ScrClosure *closure, ScrDyn *const *args, size_t argc) { \
-    (void)closure;                                                                 \
-    (void)args;                                                                    \
-    (void)argc;                                                                    \
-    return lu_proto_fenced(#name);                                                 \
+static const char *const lu_field_names[] = {"protocol", "slashes", "auth",  "host",
+                                             "port",     "hostname", "hash", "search",
+                                             "query",    "pathname", "path", "href"};
+#define LU_FIELD_COUNT (sizeof lu_field_names / sizeof lu_field_names[0])
+
+/* A string-or-null field of a Url object, retained into *slot. False for
+ * another type. */
+static bool lu_read_str(const ScrDyn *o, const char *key, ScrStr **slot) {
+  const ScrDyn *v = lu_unwrap(scr_dyn_obj_get(o, key, strlen(key)));
+  if (!v || v->kind == SCR_DYN_NULL) return true;
+  if (v->kind != SCR_DYN_STR) return false;
+  *slot = scr_str_retain(v->v.str);
+  return true;
+}
+
+/* The record of a Url object: an object whose own properties are exactly
+ * the twelve a Url has, in its order, each holding a value a parsed Url
+ * holds (strings or null; slashes true or null; query a string, null or an
+ * object). Node's methods copy any other property as well and read
+ * missing ones as undefined, so other shapes are fenced. False for those. */
+static bool lu_from_dyn(const ScrDyn *value, LegacyUrl *u) {
+  const ScrDyn *o = lu_unwrap(value);
+  if (!o || o->kind != SCR_DYN_OBJ) return false;
+  ScrDyn *keys = scr_dyn_obj_own_keys(o);
+  bool same = keys && scr_dyn_arr_len(keys) == (double)LU_FIELD_COUNT;
+  for (size_t i = 0; same && i < LU_FIELD_COUNT; i++) {
+    ScrDyn *key = scr_dyn_arr_at(keys, (double)i);
+    same = key->kind == SCR_DYN_STR && lu_is(key->v.str, lu_field_names[i]);
+    scr_dyn_release(key);
   }
-LU_FENCED_METHOD(parse)
-LU_FENCED_METHOD(resolve)
-LU_FENCED_METHOD(resolveObject)
-LU_FENCED_METHOD(parseHost)
+  if (keys) scr_dyn_release(keys);
+  if (!same) return false;
+  const ScrDyn *slashes = lu_unwrap(scr_dyn_obj_get(o, "slashes", 7));
+  if (slashes->kind == SCR_DYN_BOOL && slashes->v.b) u->slashes = true;
+  else if (slashes->kind != SCR_DYN_NULL) return false;
+  const ScrDyn *query = lu_unwrap(scr_dyn_obj_get(o, "query", 5));
+  if (query->kind == SCR_DYN_OBJ) u->query_obj = scr_dyn_retain((ScrDyn *)query);
+  else if (!lu_read_str(o, "query", &u->query)) return false;
+  return lu_read_str(o, "protocol", &u->protocol) && lu_read_str(o, "auth", &u->auth) &&
+         lu_read_str(o, "host", &u->host) && lu_read_str(o, "port", &u->port) &&
+         lu_read_str(o, "hostname", &u->hostname) && lu_read_str(o, "hash", &u->hash) &&
+         lu_read_str(o, "search", &u->search) && lu_read_str(o, "pathname", &u->pathname) &&
+         lu_read_str(o, "path", &u->path) && lu_read_str(o, "href", &u->href);
+}
+
+/* Writes every field of the record into a Url object, in place. */
+static void lu_store(ScrDyn *object, const LegacyUrl *u) {
+  ScrDyn *o = (ScrDyn *)lu_unwrap(object);
+  ScrDyn *fresh = lu_to_dyn(u);
+  for (size_t i = 0; i < LU_FIELD_COUNT; i++) {
+    const char *key = lu_field_names[i];
+    scr_dyn_obj_set(o, key, strlen(key), scr_dyn_retain(scr_dyn_obj_get(fresh, key, strlen(key))));
+  }
+  scr_dyn_release(fresh);
+}
+
+static bool lu_all_null(const LegacyUrl *u) {
+  return !u->protocol && !u->slashes && !u->auth && !u->host && !u->port && !u->hostname &&
+         !u->hash && !u->search && !u->query && !u->query_obj && !u->pathname && !u->path &&
+         !u->href;
+}
+
+static void lu_resolve_object(LegacyUrl *result, const LegacyUrl *self, LegacyUrl *rel);
+
+/* resolveObject's result: the resolved record as a new Url, with href set
+ * to its format(). */
+static ScrDyn *lu_resolved(const LegacyUrl *self, LegacyUrl *rel) {
+  LegacyUrl result = {0};
+  lu_resolve_object(&result, self, rel);
+  ScrDyn *out = lu_to_dyn(&result);
+  lu_free(&result);
+  ScrStr *href = lu_format_object(out);
+  if (!href) {
+    scr_dyn_release(out);
+    return NULL;
+  }
+  scr_dyn_obj_set(out, "href", 4, scr_dyn_new_str(href));
+  scr_str_release(href);
+  return out;
+}
+
+/* The relative argument of resolveObject: a string parses as Node's
+ * rel.parse(relative, false, true); a Url object reads as it is. */
+static bool lu_relative(const char *method, const ScrDyn *value, LegacyUrl *rel) {
+  const ScrDyn *v = lu_unwrap(value);
+  if (v && v->kind == SCR_DYN_STR) return lu_parse(rel, v->v.str, false, true);
+  if (!v || v->kind == SCR_DYN_UNDEF || v->kind == SCR_DYN_NULL) {
+    char message[64];
+    int n = snprintf(message, sizeof message, "Cannot read properties of %s (reading 'hash')",
+                     v && v->kind == SCR_DYN_NULL ? "null" : "undefined");
+    scr_throw_error_msg(SCR_ERR_TYPE, message, (size_t)n);
+    return false;
+  }
+  if (lu_from_dyn(v, rel)) return true;
+  lu_fence(method, "a relative value that is not a string or a Url");
+  return false;
+}
+
+/* Url.prototype.parse(url, parseQueryString, slashesDenoteHost) on a Url
+ * that holds no parts yet (new Url()): parses into it and answers it. */
+static ScrDyn *lu_proto_parse(ScrClosure *closure, ScrDyn *const *args, size_t argc) {
+  (void)closure;
+  ScrDyn *self = scr_dyn_this_get();
+  ScrDyn *out = NULL;
+  LegacyUrl u = {0};
+  if (!lu_from_dyn(self, &u) || !lu_all_null(&u)) {
+    lu_fence("parse", "a value other than a new Url");
+  } else {
+    const ScrStr *s = lu_string_arg(argc > 0 ? args[0] : NULL, "url");
+    bool query = argc > 1 && scr_dyn_truthy(args[1]);
+    bool slashes = argc > 2 && scr_dyn_truthy(args[2]);
+    if (s && lu_parse(&u, s, query, slashes)) {
+      lu_store(self, &u);
+      out = scr_dyn_retain(self);
+    }
+  }
+  lu_free(&u);
+  scr_dyn_release(self);
+  return out;
+}
+
+/* Url.prototype.resolveObject(relative): a new Url. */
+static ScrDyn *lu_proto_resolveObject(ScrClosure *closure, ScrDyn *const *args, size_t argc) {
+  (void)closure;
+  ScrDyn *self = scr_dyn_this_get();
+  ScrDyn *out = NULL;
+  LegacyUrl u = {0}, rel = {0};
+  if (!lu_from_dyn(self, &u))
+    lu_fence("resolveObject", "a value other than a Url");
+  else if (lu_relative("resolveObject", argc > 0 ? args[0] : NULL, &rel))
+    out = lu_resolved(&u, &rel);
+  lu_free(&u);
+  lu_free(&rel);
+  scr_dyn_release(self);
+  return out;
+}
+
+/* Url.prototype.resolve(relative): resolveObject(url.parse(relative, false,
+ * true)).format(). The parse doesn't report DEP0169: a method call has no
+ * call site to test against node_modules. */
+static ScrDyn *lu_proto_resolve(ScrClosure *closure, ScrDyn *const *args, size_t argc) {
+  (void)closure;
+  ScrDyn *self = scr_dyn_this_get();
+  ScrDyn *out = NULL;
+  LegacyUrl u = {0}, rel = {0};
+  const ScrDyn *relative = lu_unwrap(argc > 0 ? args[0] : NULL);
+  if (!lu_from_dyn(self, &u)) {
+    lu_fence("resolve", "a value other than a Url");
+  } else if (lu_is_url_instance(relative) ? lu_from_dyn(relative, &rel)
+                                          : (lu_string_arg(relative, "url") &&
+                                             lu_parse(&rel, relative->v.str, false, true))) {
+    ScrDyn *resolved = lu_resolved(&u, &rel);
+    if (resolved) {
+      ScrDyn *href = scr_dyn_obj_get(resolved, "href", 4);
+      out = scr_dyn_retain(href);
+      scr_dyn_release(resolved);
+    }
+  } else if (!scr_exc_pending()) {
+    lu_fence("resolve", "a relative Url of another shape");
+  }
+  lu_free(&u);
+  lu_free(&rel);
+  scr_dyn_release(self);
+  return out;
+}
+
+/* Url.prototype.parseHost(): splits host's trailing :port (portPattern
+ * /:[0-9]*$/) into port and hostname. */
+static ScrDyn *lu_proto_parseHost(ScrClosure *closure, ScrDyn *const *args, size_t argc) {
+  (void)closure;
+  (void)args;
+  (void)argc;
+  ScrDyn *self = scr_dyn_this_get();
+  LegacyUrl u = {0};
+  const ScrDyn *receiver = lu_unwrap(self);
+  if (receiver->kind == SCR_DYN_UNDEF || receiver->kind == SCR_DYN_NULL) {
+    char message[64];
+    int n = snprintf(message, sizeof message, "Cannot read properties of %s (reading 'host')",
+                     receiver->kind == SCR_DYN_UNDEF ? "undefined" : "null");
+    scr_throw_error_msg(SCR_ERR_TYPE, message, (size_t)n);
+    scr_dyn_release(self);
+    return NULL;
+  }
+  if (!lu_from_dyn(self, &u)) {
+    lu_fence("parseHost", "a value other than a Url");
+    scr_dyn_release(self);
+    return NULL;
+  }
+  ScrDyn *o = (ScrDyn *)lu_unwrap(self);
+  const ScrStr *host = u.host;
+  size_t keep = host ? host->len : 0;
+  if (host) {
+    size_t i = host->len;
+    while (i > 0 && host->data[i - 1] >= '0' && host->data[i - 1] <= '9') i--;
+    if (i > 0 && host->data[i - 1] == ':') {
+      if (i < host->len)
+        scr_dyn_obj_set(o, "port", 4, lu_box_owned(lu_str(host->data + i, host->len - i)));
+      keep = i - 1;
+    }
+  }
+  if (host && keep > 0) scr_dyn_obj_set(o, "hostname", 8, lu_box_owned(lu_str(host->data, keep)));
+  lu_free(&u);
+  scr_dyn_release(self);
+  return scr_dyn_undefined();
+}
 
 static void lu_prototype_teardown(void) {
   if (!lu_prototype) return;
@@ -1245,6 +1470,38 @@ ScrStr *scr_url_legacy_resolve(const ScrDyn *from, const ScrDyn *to, bool warn) 
   lu_free(&self);
   lu_free(&rel);
   lu_free(&result);
+  return out;
+}
+
+/* new url.Url(): a Url whose twelve parts are null. */
+ScrDyn *scr_url_legacy_new(void) {
+  LegacyUrl u = {0};
+  return lu_to_dyn(&u);
+}
+
+/* `value instanceof url.Url`. */
+bool scr_url_legacy_is_url(const ScrDyn *value) { return lu_is_url_instance(lu_unwrap(value)); }
+
+/* url.resolveObject(source, relative): relative itself for a falsy source,
+ * else url.parse(source, false, true).resolveObject(relative). */
+ScrDyn *scr_url_legacy_resolve_object(const ScrDyn *source, const ScrDyn *relative, bool warn) {
+  if (!scr_dyn_truthy(source))
+    return relative ? scr_dyn_retain((ScrDyn *)relative) : scr_dyn_undefined();
+  lu_warn_parse(warn);
+  const ScrDyn *from = lu_unwrap(source);
+  LegacyUrl self = {0}, rel = {0};
+  ScrDyn *out = NULL;
+  bool parsed;
+  if (lu_is_url_instance(from)) {
+    parsed = lu_from_dyn(from, &self);
+    if (!parsed) lu_fence("resolveObject", "a value other than a Url");
+  } else {
+    const ScrStr *s = lu_string_arg(from, "url");
+    parsed = s && lu_parse(&self, s, false, true);
+  }
+  if (parsed && lu_relative("resolveObject", relative, &rel)) out = lu_resolved(&self, &rel);
+  lu_free(&self);
+  lu_free(&rel);
   return out;
 }
 

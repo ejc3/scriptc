@@ -98,6 +98,7 @@ import {
 } from "../program.js";
 import { PoisonError, dynFallbackType, jsFuncNameOf, newFnCtx, own } from "./lowerer.js";
 import { isAssertClassNew } from "./assert-instances.js";
+import { isLegacyUrlClass, lowerLegacyUrlNew } from "./builtins/url.js";
 import { lowerArrayConstructor } from "./containers/array-construction.js";
 import { lowerMapSeedNew, lowerSetSeedNew } from "./containers/collection-methods.js";
 import { lowerObjectConstructor } from "./containers/indexed-objects.js";
@@ -9234,6 +9235,7 @@ export function lowerNew(lowerer: Lowerer, expr: ts.NewExpression): IrExpr {
     const buffer = lowerNodeModulesBufferConstruct(lowerer, expr);
     if (buffer) return buffer;
   }
+  if (isLegacyUrlClass(lowerer, expr.expression)) return lowerLegacyUrlNew(lowerer, expr, loc);
   // new Function(...): Node's EvalError under
   // --disallow-code-generation-from-strings (code-generation.ts).
   if (codeGenerationCalleeOf(lowerer, expr.expression) === "Function")

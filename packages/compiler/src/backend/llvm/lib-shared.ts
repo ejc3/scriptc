@@ -686,6 +686,9 @@ export const LIB_FN_SYMS: Record<string, string> = {
   "url.legacyParse": "scr_url_legacy_parse",
   "url.legacyFormat": "scr_url_legacy_format",
   "url.legacyResolve": "scr_url_legacy_resolve",
+  "url.legacyResolveObject": "scr_url_legacy_resolve_object",
+  "url.legacyNew": "scr_url_legacy_new",
+  "url.legacyIsUrl": "scr_url_legacy_is_url",
   "url.domainToASCII": "scr_url_domain_to_ascii",
   "punycode.decode": "scr_punycode_decode",
   "punycode.encode": "scr_punycode_encode",
@@ -1564,6 +1567,7 @@ export const USES_TIMERS_LIB_FNS = new Set<string>([
   "url.legacyParse",
   "url.legacyFormat",
   "url.legacyResolve",
+  "url.legacyResolveObject",
   // The wrappers schedule warnings and callbacks on the tick queue.
   "util.deprecate",
   "util.callbackify",

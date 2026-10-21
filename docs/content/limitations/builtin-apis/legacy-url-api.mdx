@@ -1,3 +1,5 @@
-- **Legacy URL API:** `url.parse()`, `url.format()`, `url.resolve()`, `url.domainToASCII()`, and `url.domainToUnicode()` compile, including Punycode hostnames and the `DEP0169`/`DEP0170` warnings.
-  A parsed `Url` object supports reads, writes, and its `format()` method; its `parse()`, `resolve()`, `resolveObject()`, and `parseHost()` methods throw `SC2020`, and `url.Url` and `url.resolveObject()` are unsupported.
-  `ERR_INVALID_URL` errors have no `input` property.
+- **Legacy URL API:** `url.parse()`, `url.format()`, `url.resolve()`, `url.resolveObject()`, `url.domainToASCII()`, and `url.domainToUnicode()` compile, including Punycode hostnames, the `DEP0169`/`DEP0170` warnings, and the `input` property of `ERR_INVALID_URL` errors.
+  `new url.Url()` and `instanceof url.Url` compile; other uses of `url.Url` as a value are unsupported.
+  A `Url` object supports reads, writes, and its `format()`, `resolve()`, `resolveObject()`, and `parseHost()` methods, and `parse()` on a new `Url`.
+  These methods throw `SC2020` on an object whose own properties are not a `Url`'s twelve parts in their order, or whose parts hold values a parsed `Url` doesn't (strings or `null`; `true` or `null` for `slashes`; also an object for `query`), and `parse()` throws it on a `Url` that already holds parts.
+  `Url.prototype.resolve()` doesn't report `DEP0169`.

@@ -689,6 +689,7 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "url.legacyParse",
   "url.legacyFormat",
   "url.legacyResolve",
+  "url.legacyResolveObject",
   "url.domainToASCII",
   "url.domainToUnicode",
   // The win32-target flavor of pathToFileURL (same runtime entry point —

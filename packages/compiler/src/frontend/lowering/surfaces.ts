@@ -1636,6 +1636,7 @@ export const BUILTIN_MODULE_FNS: Record<
     parse: { fn: "url.legacyParse", params: [DYN, DYN, DYN], result: DYN },
     format: { fn: "url.legacyFormat", params: [DYN, DYN], result: STRING },
     resolve: { fn: "url.legacyResolve", params: [DYN, DYN], result: STRING },
+    resolveObject: { fn: "url.legacyResolveObject", params: [DYN, DYN], result: DYN },
     domainToASCII: { fn: "url.domainToASCII", params: [DYN], result: STRING },
     domainToUnicode: { fn: "url.domainToUnicode", params: [DYN], result: STRING },
   },

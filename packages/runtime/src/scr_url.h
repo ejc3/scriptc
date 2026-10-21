@@ -52,6 +52,9 @@ ScrDyn *scr_url_legacy_parse(const ScrDyn *url, const ScrDyn *parse_query, const
                              bool warn);
 ScrStr *scr_url_legacy_format(const ScrDyn *object, const ScrDyn *options, bool warn);
 ScrStr *scr_url_legacy_resolve(const ScrDyn *from, const ScrDyn *to, bool warn);
+ScrDyn *scr_url_legacy_resolve_object(const ScrDyn *source, const ScrDyn *relative, bool warn);
+ScrDyn *scr_url_legacy_new(void);
+bool scr_url_legacy_is_url(const ScrDyn *value);
 ScrStr *scr_url_domain_to_ascii(const ScrDyn *domain, bool missing);
 /* node:punycode (scr_url.c): punycode.js 2.1.0's encode/decode, toASCII/
  * toUnicode (mapDomain over RFC 3490 separators) and ucs2.decode (UTF-16

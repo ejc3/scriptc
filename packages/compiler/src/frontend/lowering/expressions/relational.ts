@@ -52,6 +52,7 @@ import { NARROW_FIRST, sideEffectFreeOptionValue } from "../surfaces.js";
 import { isExecExceptionType, refuseExecExceptionCode } from "../builtins/errors.js";
 import { hasRuntimeStatics } from "../class-runtime-statics.js";
 import { nullProtoRecordShape, recordNullProtoTest } from "../null-prototype.js";
+import { isLegacyUrlClass, lowerLegacyUrlInstanceOf } from "../builtins/url.js";
 
 /** `x instanceof C` for a program-declared class C. When x's static
  * class and C are both in extends-hierarchies the test is dynamic — the
@@ -65,6 +66,7 @@ import { nullProtoRecordShape, recordNullProtoTest } from "../null-prototype.js"
 export function lowerInstanceOf(lowerer: Lowerer, expr: ts.BinaryExpression, loc: SrcLoc): IrExpr {
   const webAssembly = lowerWebAssemblyInstanceof(lowerer, expr);
   if (webAssembly !== null) return webAssembly;
+  if (isLegacyUrlClass(lowerer, expr.right)) return lowerLegacyUrlInstanceOf(lowerer, expr, loc);
   refuseWebAssemblyUse(lowerer, expr.right);
   // `x instanceof net.Socket` over a union with a netSocket arm — the
   // h2 compat 'connect' narrowing (lower-server.ts): a union tag test.

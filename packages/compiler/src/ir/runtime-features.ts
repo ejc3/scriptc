@@ -112,8 +112,11 @@ const LEGACY_URL_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "url.domainToASCII",
   "url.domainToUnicode",
   "url.legacyFormat",
+  "url.legacyIsUrl",
+  "url.legacyNew",
   "url.legacyParse",
   "url.legacyResolve",
+  "url.legacyResolveObject",
 ]);
 
 const UTIL_CALLABLE_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
