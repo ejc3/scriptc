@@ -546,6 +546,21 @@ export function lowerBundledEsmInits(
     )
       tables.set(name, { stmt: null, entries: [] });
   }
+  // A star re-export into the entry (`__reExport(main, ns, module.exports)`)
+  // adds names its export table does not list, so the entry namespace's
+  // missing names are unknown.
+  const entryReExports =
+    mainTarget !== null &&
+    (refsByName.get(mainTarget) ?? []).some((x) => {
+      const p = x.parent;
+      return (
+        p !== undefined &&
+        ts.isCallExpression(p) &&
+        ts.isIdentifier(p.expression) &&
+        helperBase(p.expression.text) === "__reExport" &&
+        p.arguments.nodes[0] === x
+      );
+    });
   const lowered = new Set<string>();
   /** Some binding between the use site and the top level rebinds a name
    * the table's getters read. */
@@ -761,7 +776,10 @@ export function lowerBundledEsmInits(
     }
     const values = new Map(table.entries);
     // A name the module does not export reads undefined on the namespace
-    // object (`__esModule` reads true); plain reads only, never calls.
+    // object (`__esModule` reads true); plain reads only, never calls. The
+    // namespace is an ordinary object, so a name Object.prototype answers
+    // (constructor, toString, __proto__) is no missing name, and neither
+    // is any name of an entry that star re-exports other modules.
     const missing = new Set<string>();
     const readNames = new Set<string>();
     const memberRead = (access: ts.Node | undefined, of: ts.Node): boolean => {
@@ -777,6 +795,7 @@ export function lowerBundledEsmInits(
         const parent = access.parent;
         if (parent !== undefined && ts.isCallExpression(parent) && parent.expression === access)
           return false;
+        if (name in Object.prototype || (isMain && entryReExports)) return false;
         missing.add(name);
         return true;
       }
