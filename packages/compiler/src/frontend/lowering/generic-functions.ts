@@ -87,6 +87,12 @@ export interface GenericFnInfo {
    * defining literal must sit at module scope (no enclosing frame to
    * capture). */
   objectLiteral?: true;
+  /** A generic arrow/function-expression binding declared inside a
+   * function (bindingGenericFnInfoOf). Direct calls reach its instances;
+   * a VALUE of it is refused, because JavaScript makes a distinct function
+   * each time the declaration runs and an instance's closure is one
+   * function for the whole program. */
+  functionLocal?: true;
   /** IMPLICIT-ANY monomorphization (npm-static JS): parallel to
    * decl.parameters — the param's own symbol when the slot is a BINDABLE
    * implicit-any parameter (untyped, identifier-named, never written in
@@ -1184,6 +1190,13 @@ export function lowerGenericFnValue(
     lowerer.noteEdge(inst.name);
     return { kind: "closure", fnName: inst.name, captures: [], type: funcType, loc };
   }
+  if (info.functionLocal) {
+    lowerer.unsupported(
+      "SC1090",
+      ref,
+      `values of generic arrow/function-expression bindings declared inside functions (each evaluation of '${info.baseName}' makes a distinct function; call '${info.baseName}' directly, or declare the binding at module scope)`,
+    );
+  }
   const fenceUnpinned: () => never = () =>
     lowerer.unsupported(
       "SC1090",
@@ -2174,6 +2187,61 @@ function internImplicitInstance(
   return inst;
 }
 
+/** True when `scanned` (part of the initializer `init` of `decl`) needs a
+ * frame a module function does not have: `this`/`super`, or a reference
+ * to a value or type parameter that an enclosing FUNCTION scope declares
+ * outside the initializer. Module-scope declarations are reachable from
+ * any module function. With `allowSelf`, the binding's own name is not a
+ * capture: it resolves to the compiled instances like any other call. */
+function capturesEnclosingFrame(
+  lowerer: Lowerer,
+  decl: ts.VariableDeclaration,
+  init: ts.FunctionExpression | ts.ArrowFunction,
+  scanned: ts.Node,
+  allowSelf = false,
+): boolean {
+  let captures = false;
+  const declaredInFunction = (d: ts.Node): boolean => {
+    for (
+      let p: ts.Node | undefined = d.parent;
+      p !== undefined && !ts.isSourceFile(p);
+      p = p.parent
+    )
+      if (ts.isFunctionLike(p)) return true;
+    return false;
+  };
+  const scan = (n: ts.Node): void => {
+    if (captures) return;
+    if (n.kind === ts.SyntaxKind.ThisKeyword || n.kind === ts.SyntaxKind.SuperKeyword) {
+      // Arrow bodies see the ENCLOSING this; function expressions
+      // rebind their own — but a bare `this` there is untyped JS
+      // dynamism either way. Reject both, cheaply and soundly.
+      captures = true;
+      return;
+    }
+    if (ts.isIdentifier(n)) {
+      const s = lowerer.checker.getSymbolAtLocation(n);
+      for (const d of s ? (s.valueDeclaration ? [s.valueDeclaration] : s.declarations) : []) {
+        if (allowSelf && d === decl) continue;
+        if (s!.valueDeclaration === undefined && !ts.isTypeParameterDeclaration(d)) continue;
+        if (
+          ts.getSourceFileOfNode(d) === ts.getSourceFileOfNode(decl) &&
+          !(d.pos >= init.pos && d.end <= init.end) &&
+          declaredInFunction(d)
+        ) {
+          // Declared outside the initializer, in this file, by an
+          // enclosing function scope.
+          captures = true;
+          return;
+        }
+      }
+    }
+    ts.forEachChild(n, scan);
+  };
+  scan(scanned);
+  return captures;
+}
+
 /** The implicit-any twin of bindingGenericFnNodeOf, for LOCAL and module
  * bindings alike (`const knownBy = (cmd) => [cmd.name()].concat(...)`
  * inside a method body — commander's _registerCommand shape): the
@@ -2211,44 +2279,7 @@ export function implicitLocalFnNodeOf(
     if (redeclared) return null;
     if (!isConst && !bindingNeverReassigned(lowerer, sym, decl)) return null;
     // The capture scan: instances are module functions with no frame.
-    let captures = false;
-    const scan = (n: ts.Node): void => {
-      if (captures) return;
-      if (n.kind === ts.SyntaxKind.ThisKeyword || n.kind === ts.SyntaxKind.SuperKeyword) {
-        // Arrow bodies see the ENCLOSING this; function expressions
-        // rebind their own — but a bare `this` there is untyped JS
-        // dynamism either way. Reject both, cheaply and soundly.
-        captures = true;
-        return;
-      }
-      if (ts.isIdentifier(n)) {
-        const s = lowerer.checker.getSymbolAtLocation(n);
-        const d = s ? s.valueDeclaration : undefined;
-        if (
-          d &&
-          ts.getSourceFileOfNode(d) === ts.getSourceFileOfNode(decl) &&
-          !(d.pos >= init.pos && d.end <= init.end)
-        ) {
-          // Declared outside the initializer, in this file: a capture
-          // exactly when some enclosing FUNCTION scope declares it —
-          // module-scope declarations are reachable from any module
-          // function.
-          for (
-            let p: ts.Node | undefined = d.parent;
-            p !== undefined && !ts.isSourceFile(p);
-            p = p.parent
-          ) {
-            if (ts.isFunctionLike(p)) {
-              captures = true;
-              return;
-            }
-          }
-        }
-      }
-      ts.forEachChild(n, scan);
-    };
-    scan(init.body);
-    return captures ? null : init;
+    return capturesEnclosingFrame(lowerer, decl, init, init.body) ? null : init;
   };
   const node = probe();
   if (node === null) {
@@ -2393,8 +2424,9 @@ export function objLitGenericFnInfoOf(
 /** The generic function-like INITIALIZER behind a binding declaration —
  * `const f = <T>(x: T) => x` or `const f = function g<T>(x: T) {...}`
  * (parens stripped). Null when the declaration isn't that shape; the
- * SHAPE only — whether the binding qualifies (module scope, never
- * reassigned) is bindingGenericFnInfoOf's business. */
+ * SHAPE only — whether the binding qualifies (never reassigned, and
+ * inside a function only when it captures nothing from the enclosing
+ * frame) is bindingGenericFnInfoOf's business. */
 export function bindingGenericFnNodeOf(
   decl: ts.VariableDeclaration,
 ): ts.FunctionExpression | ts.ArrowFunction | null {
@@ -2444,16 +2476,62 @@ export function bindingContextualGenericFnNodeOf(
   return init;
 }
 
+/** True when every use of the function-local binding `decl` runs after its
+ * initializer: a const declared directly in a block (not a switch clause),
+ * with no value reference to it above the declaration or inside a function
+ * declaration of the block (hoisted, so callable before it). */
+function initializedBeforeUses(
+  lowerer: Lowerer,
+  decl: ts.VariableDeclaration,
+  sym: ts.Symbol,
+): boolean {
+  const list = decl.parent;
+  if (!ts.isVariableDeclarationList(list) || (list.flags & ts.NodeFlags.Const) === 0) return false;
+  const stmt = list.parent;
+  if (stmt === undefined || !ts.isVariableStatement(stmt)) return false;
+  const block = stmt.parent;
+  if (block === undefined || !ts.isBlock(block)) return false;
+  const inFunctionDeclaration = (node: ts.Node): boolean => {
+    for (let p = node.parent; p !== undefined && p !== block; p = p.parent)
+      if (ts.isFunctionDeclaration(p)) return true;
+    return false;
+  };
+  let early = false;
+  ts.walkPreorder(block, (node) => {
+    if (early) return "stop";
+    // Types are erased: a same-named type alias is not a use. A class's
+    // `extends` expression runs, though its type arguments do not.
+    if (
+      (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node)) ||
+      ts.isTypeAliasDeclaration(node) ||
+      ts.isInterfaceDeclaration(node)
+    )
+      return "skip";
+    if (!ts.isIdentifier(node) || node === decl.name) return undefined;
+    const read =
+      node.parent !== undefined &&
+      ts.isShorthandPropertyAssignment(node.parent) &&
+      node.parent.name === node
+        ? lowerer.checker.getShorthandAssignmentValueSymbol(node.parent)
+        : lowerer.checker.getSymbolAtLocation(node);
+    if (read === sym && (node.end <= decl.pos || inFunctionDeclaration(node))) early = true;
+    return early ? "stop" : undefined;
+  });
+  return !early;
+}
+
 /** The interned GenericFnInfo for one generic arrow/function-expression
  * binding initializer, with the supportability fences applied ONCE per
- * declaration: the binding must sit at module scope (the compiled
- * instances are plain module functions — an enclosing frame would need
- * captures) and must provably HOLD the initializer once initialized — a
- * const, or a let/var nothing in its declaring file ever writes (ESM
- * import bindings are read-only, so the file scan is the whole story;
- * observing the UNINITIALIZED state needs a hoisted early call, the
- * same temporal hole const TDZ leaves — the object-literal generic-
- * method receiver stance). Successful registration enters the info
+ * declaration: the binding must sit at module scope, or inside a function
+ * whose frame its function never reads (the compiled instances are plain
+ * module functions — an enclosing frame would need captures;
+ * capturesEnclosingFrame) and before whose every use its initializer runs
+ * (initializedBeforeUses), and must provably HOLD the initializer once
+ * initialized — a const, or a let/var nothing in its declaring file ever
+ * writes (ESM import bindings are read-only, so the file scan is the whole
+ * story; observing the UNINITIALIZED state needs a hoisted early call, the
+ * same temporal hole const TDZ leaves — the object-literal generic-method
+ * receiver stance). Successful registration enters the info
  * in genericFnsBySymbol under the binding's symbol — and under a named
  * function expression's own inner name (it binds itself inside the
  * body, the class-expression rule) — so every genericFnOf consumer
@@ -2468,21 +2546,36 @@ export function bindingGenericFnInfoOf(
   if (existing) return existing;
   const name = (decl.name as ts.Identifier).text;
   if (fnNode.asteriskToken) lowerer.unsupported("SC1071", fnNode);
+  // A binding inside a function compiles the same way when its function
+  // needs nothing from the enclosing frames.
+  let inFunction = false;
   for (
     let n: ts.Node | undefined = decl.parent;
-    n !== undefined && !ts.isSourceFile(n);
+    n !== undefined && !ts.isSourceFile(n) && !inFunction;
     n = n.parent
   ) {
-    if (ts.isFunctionLike(n)) {
-      lowerer.unsupported(
-        "SC1090",
-        fnNode,
-        `generic arrow/function-expression bindings declared inside functions (the compiled instantiations of '${name}' are module functions and cannot capture the enclosing frame — declare the binding at module scope)`,
-      );
-    }
+    inFunction = ts.isFunctionLike(n);
+  }
+  if (inFunction && capturesEnclosingFrame(lowerer, decl, fnNode, fnNode, true)) {
+    lowerer.unsupported(
+      "SC1090",
+      fnNode,
+      `generic arrow/function-expression bindings declared inside functions (the compiled instantiations of '${name}' are module functions and cannot capture the enclosing frame — declare the binding at module scope)`,
+    );
   }
   const sym = lowerer.checker.getSymbolAtLocation(decl.name);
   if (!sym) lowerer.unsupported("SC1090", decl.name, "this binding form");
+  // The instances exist from the start, but the binding does not: every
+  // use must run after the initializer. A const declared directly in a
+  // block, and never referenced above its declaration (a closure declared
+  // earlier could call it first), is used only once initialized.
+  if (inFunction && !initializedBeforeUses(lowerer, decl, sym)) {
+    lowerer.unsupported(
+      "SC1090",
+      fnNode,
+      `generic arrow/function-expression bindings inside functions that use var or let, sit in a switch clause, or follow their first uses (a call of '${name}' could run before its initializer — declare it with const above its uses, or at module scope)`,
+    );
+  }
   requireStableGenericBinding(lowerer, decl, sym, name);
   const typeParams: ts.Symbol[] = [];
   if (fnNode.typeParameters !== undefined) {
@@ -2513,10 +2606,15 @@ export function bindingGenericFnInfoOf(
   const info: GenericFnInfo = {
     decl: fnNode,
     baseName: name,
+    // Function-local bindings carry their position, like implicit local
+    // functions: two functions may each declare the same name, and a
+    // local may shadow a module-scope binding.
     qualifiedName: lowerer.qualify(
       ts.getSourceFileOfNode(decl),
-      nsPathPrefix(stmt ?? decl, decl) + name,
+      nsPathPrefix(stmt ?? decl, decl) +
+        (inFunction ? `${name}%l${ts.tokenStartOfNode(decl)}` : name),
     ),
+    ...(inFunction ? { functionLocal: true as const } : {}),
     typeParams,
     instances: new Map(),
   };

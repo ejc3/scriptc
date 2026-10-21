@@ -5038,8 +5038,9 @@ export function lowerVarDecl(
   // file-scope declarations registered at collection, block-scoped ones
   // here, before any use in source order can lower), the binding has no
   // runtime value, and the statement emits nothing. Non-qualifying
-  // shapes (reassigned bindings, declarations inside functions) fence
-  // by name inside; a collection-time report dedupes.
+  // shapes (reassigned bindings, bindings inside functions that capture
+  // the enclosing frame) fence by name inside; a collection-time report
+  // dedupes.
   {
     const gfnNode = bindingGenericFnNodeOf(decl) ?? bindingContextualGenericFnNodeOf(lowerer, decl);
     if (gfnNode) {
