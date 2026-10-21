@@ -4777,6 +4777,89 @@ export function lowerVarDeclList(
   return out.length === 1 ? out[0]! : { kind: "block", body: out, loc: locOf(list) };
 }
 
+/** The array type a TypeScript evolving-array binding (`const rows = [];`,
+ * unannotated, filled by pushes) holds. The checker answers the declaration
+ * with the evolving any[] and each reference with the type the writes
+ * before it built: never or any elements where nothing is known yet (and
+ * at the push receivers themselves), the evolved element type elsewhere.
+ * The binding takes the evolved type only when every evolved read maps to
+ * the same array type: a read at a narrower type (`const alias = rows;`
+ * before a push of another element type) would coerce into a fresh array
+ * and stop seeing later pushes. Null for a let or var, when no read shows an element type,
+ * when the reads differ, or when a nested function reads the binding (the
+ * checker leaves those at any[]). */
+function evolvedArrayType(lowerer: Lowerer, decl: ts.VariableDeclaration): IrType | null {
+  if (!ts.isIdentifier(decl.name) || isJsSourceFile(ts.getSourceFileOfNode(decl))) return null;
+  // A const binding holds the one array the pushes fill; an assignment to
+  // a let could bring an array whose storage would have to be copied.
+  if (
+    decl.parent === undefined ||
+    !ts.isVariableDeclarationList(decl.parent) ||
+    (decl.parent.flags & ts.NodeFlags.Const) === 0
+  )
+    return null;
+  let initializer: ts.Expression | undefined = decl.initializer;
+  while (initializer && ts.isParenthesizedExpression(initializer))
+    initializer = initializer.expression;
+  if (
+    !initializer ||
+    !ts.isArrayLiteralExpression(initializer) ||
+    initializer.elements.nodes.length !== 0
+  )
+    return null;
+  const declared = lowerer.typeOf(decl.name);
+  const isUnknownElementArray = (t: ts.Type): boolean | null => {
+    if (!lowerer.checker.isArrayType(t)) return null;
+    const elem = lowerer.checker.getTypeArguments(t as ts.TypeReference)[0];
+    return elem === undefined || (elem.flags & (ts.TypeFlags.Any | ts.TypeFlags.Never)) !== 0;
+  };
+  if (isUnknownElementArray(declared) !== true) return null;
+  const symbol = lowerer.checker.getSymbolAtLocation(decl.name);
+  const scope = decl.parent?.parent?.parent;
+  if (symbol === undefined || scope === undefined || !ts.isBlock(scope)) return null;
+
+  const evolved: ts.Type[] = [];
+  let invalid = false;
+  const visit = (root: ts.Node, nested: boolean): void => {
+    ts.walkPreorder(root, (node) => {
+      if (invalid) return "stop";
+      if (node !== root && ts.isFunctionLike(node)) {
+        visit(node, true);
+        return "skip";
+      }
+      if (!ts.isIdentifier(node) || node === decl.name) return undefined;
+      // A shorthand property (`{ rows }`) names the property; its value is
+      // the binding.
+      const shorthand =
+        node.parent !== undefined &&
+        ts.isShorthandPropertyAssignment(node.parent) &&
+        node.parent.name === node;
+      const read = shorthand
+        ? lowerer.checker.getShorthandAssignmentValueSymbol(node.parent)
+        : lowerer.checker.getSymbolAtLocation(node);
+      if (read !== symbol) return undefined;
+      if (nested) {
+        invalid = true;
+        return "stop";
+      }
+      const t = lowerer.typeOf(node);
+      const unknown = isUnknownElementArray(t);
+      if (unknown === null) invalid = true;
+      else if (!unknown) evolved.push(t);
+      return undefined;
+    });
+  };
+  visit(scope, false);
+  if (invalid || evolved.length === 0) return null;
+  const mapped = lowerer.mapTypeOf(evolved[0]!);
+  if (mapped?.kind !== "array") return null;
+  for (const t of evolved.slice(1)) {
+    const other = lowerer.mapTypeOf(t);
+    if (other === null || !typeEquals(other, mapped)) return null;
+  }
+  return mapped;
+}
+
 /** A single static type for an initializer-less JavaScript `let` whose
  * later plain writes all agree. An evolving JS local reads as `undefined`
  * until control flow proves a write, so a scalar slot is sound only when
@@ -5446,6 +5529,17 @@ export function lowerVarDecl(
   if (returnedEmptyArrayType !== null) {
     type = returnedEmptyArrayType;
     init = lowerer.lowerExprExpecting(decl.initializer, returnedEmptyArrayType);
+  }
+  // A TypeScript `const rows = [];` filled by later pushes: the checker
+  // types the declaration with the evolving any[], which has no mapping,
+  // while every later read sees the element type the pushes built. The
+  // binding takes that evolved type (evolvedArrayType).
+  if (returnedEmptyArrayType === null && type === null && !decl.type) {
+    const evolved = evolvedArrayType(lowerer, decl);
+    if (evolved !== null) {
+      type = evolved;
+      init = lowerer.lowerExprExpecting(decl.initializer, evolved);
+    }
   }
   // A JS `const leaked = [];` (the evolving-array idiom — test/common's
   // leak ledger): tsc types the binding by its LATER pushes, but this
