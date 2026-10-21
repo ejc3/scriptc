@@ -413,3 +413,55 @@ init_index();
 console.log(late());
 `);
 });
+
+const reExportingEntry = (use: string): string => `"use strict";
+${helpers}
+var __reExport = (target, mod, secondTarget) => (__copyProps(target, mod, "default"), secondTarget && __copyProps(secondTarget, mod, "default"));
+var other_exports = {};
+__export(other_exports, { EXTRA: () => EXTRA });
+var EXTRA;
+var init_other = __esm({ "src/other.ts"() { EXTRA = "extra"; } });
+var index_exports = {};
+__export(index_exports, { KIND: () => KIND, late: () => late });
+module.exports = __toCommonJS(index_exports);
+__reExport(index_exports, (init_other(), __toCommonJS(other_exports)), module.exports);
+var KIND;
+var init_index = __esm({ "src/index.ts"() { KIND = "lambda"; } });
+function late() {
+  const index = (init_index(), __toCommonJS(index_exports));
+  return ${use};
+}
+init_index();
+console.log(late());
+`;
+
+test("an entry that star re-exports a module still answers its own names", () => {
+  expectSameBehavior(reExportingEntry("index.KIND"));
+});
+
+test("a read through the entry namespace of a name a star re-export adds keeps the package refused", () => {
+  expect(lower(reExportingEntry("index.KIND + ' ' + index.EXTRA"))).toEqual({
+    degrade: expect.stringContaining(
+      "reads the namespace of a bundled ES module ('index_exports')",
+    ) as string,
+  });
+});
+
+test.each([
+  ["constructor", "lazy.constructor === Object"],
+  ["toString", "typeof lazy.toString"],
+  ["__proto__", "lazy.__proto__ === Object.prototype"],
+  ["hasOwnProperty", "typeof lazy.hasOwnProperty"],
+])("a read of the inherited %s through a namespace keeps the package refused", (_, use) => {
+  expect(
+    lower(`"use strict";
+${helpers}${lazyModule}
+const lazy = (init_lazy(), __toCommonJS(lazy_exports));
+console.log(${use});
+`),
+  ).toEqual({
+    degrade: expect.stringContaining(
+      "reads the namespace of a bundled ES module ('lazy_exports')",
+    ) as string,
+  });
+});
