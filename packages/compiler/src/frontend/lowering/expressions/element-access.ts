@@ -38,6 +38,7 @@ import {
   dynCompoundValue,
   hasClassPayload,
   lowerDynMemberAssignment,
+  lowerElementWriteKey,
   lowerOptionalArrayIndexRead,
   lowerOptionalNumber,
   recordKeyResultOk,
@@ -1493,7 +1494,7 @@ export function lowerElementCompoundParts(
       "compound assignment through a non-native array or byte view",
     );
   }
-  const index = lowerer.lowerExpr(target.argumentExpression);
+  const index = lowerElementWriteKey(lowerer, target.argumentExpression);
   if (index.type.kind !== "f64")
     lowerer.unsupported("SC1090", target.argumentExpression, "indexing with non-number keys");
   const receiverLocal = lowerer.declareHiddenLocal("%compoundArray", receiver.type);
@@ -1836,7 +1837,7 @@ export function lowerElementWrite(lowerer: Lowerer, expr: ts.BinaryExpression): 
     const recv = lowerer.lowerExpr(target.expression);
     // The checker's flow type is a typed array, but the storage is wider.
     if (recv.type.kind !== "bytes") return lowerWiderBytesWrite(lowerer, expr, target, recv);
-    const index = lowerer.lowerExpr(target.argumentExpression);
+    const index = lowerElementWriteKey(lowerer, target.argumentExpression);
     if (index.type.kind === "dyn" && recv.type.kind === "bytes") {
       return {
         kind: "exprStmt",
@@ -2147,12 +2148,7 @@ export function lowerElementWrite(lowerer: Lowerer, expr: ts.BinaryExpression): 
       "assignment through a possibly missing nested array receiver",
     );
   }
-  const index = lowerOptionalNumber(
-    lowerer,
-    lowerer.lowerExpr(target.argumentExpression),
-    locOf(target.argumentExpression),
-    target.argumentExpression,
-  );
+  const index = lowerElementWriteKey(lowerer, target.argumentExpression);
   if (index.type.kind === "dyn" && lowerer.dynConvertible(arr.type)) {
     return {
       kind: "exprStmt",

@@ -31,6 +31,7 @@ import {
   dynCompoundValue,
   lowerAbsenceProbe,
   lowerDynMemberAssignment,
+  lowerElementWriteKey,
   lowerOptionalNumber,
   lowerPresenceOperand,
   nullishBranches,
@@ -1154,7 +1155,7 @@ export function lowerBinary(lowerer: Lowerer, expr: ts.BinaryExpression): IrExpr
         }
         if (recv?.type.kind === "array" || recv?.type.kind === "bytes") {
           const receiver = lowerer.declareHiddenLocal("%setArray", recv.type);
-          const index = lowerer.lowerExpr(expr.left.argumentExpression);
+          const index = lowerElementWriteKey(lowerer, expr.left.argumentExpression);
           if (index.type.kind !== "f64")
             lowerer.unsupported(
               "SC1090",

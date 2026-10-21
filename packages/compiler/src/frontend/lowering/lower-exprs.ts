@@ -54,7 +54,7 @@ import {
   sideEffectFreeOptionValue,
   stdlibGlobalNameOf,
 } from "./surfaces.js";
-import { UNSUPPORTED } from "../../diagnostics/diagnostic.js";
+import { UNSUPPORTED, unsupportedDiag } from "../../diagnostics/diagnostic.js";
 import { lowerHelperReturnCall } from "./containers/iterator-helpers.js";
 import {
   lowerSafeIndexRead,
@@ -1412,6 +1412,60 @@ export function lowerOptionalNumber(
   return prefix.length === 0
     ? value
     : { kind: "seqExpr", stmts: prefix, result: value, type: F64, loc };
+}
+
+/** The index of an element write, evaluated once. An index that may be
+ * undefined (a for-of variable over an array that may have holes) converts
+ * like a read's, after a runtime fence for undefined itself: JavaScript
+ * then writes a property named "undefined", which compiled arrays and
+ * typed arrays do not hold, and NaN would name another property or none. */
+export function lowerElementWriteKey(lowerer: Lowerer, node: ts.Expression): IrExpr {
+  const loc = locOf(node);
+  const raw = lowerer.lowerExpr(node);
+  if (raw.type.kind !== "union") return raw;
+  const unionId = raw.type.unionId;
+  const undefTag = lowerer.armTag(unionId, UNDEFINED_T);
+  if (undefTag < 0) return raw;
+  const held = lowerer.declareHiddenLocal("%writeKey", raw.type);
+  const key = varRef(held.id, raw.type, loc);
+  const converted = lowerOptionalNumber(lowerer, key, loc, node);
+  if (converted === key) return raw;
+  const diag = unsupportedDiag(
+    "SC1090",
+    loc,
+    "an element write with an undefined key (JavaScript writes a property named 'undefined')",
+  );
+  lowerer.runtimeFences.push(diag);
+  const line = ts.getLineAndCharacterOfPosition(ts.getSourceFileOfNode(node), loc.start).line + 1;
+  const fence = nodeThrowExpr(
+    0,
+    diag.code,
+    `${diag.message} [${diag.code} at ${loc.file}:${line}]`,
+    F64,
+    loc,
+  );
+  return {
+    kind: "seqExpr",
+    stmts: [{ kind: "varDecl", localId: held.id, init: raw, loc }],
+    result: {
+      kind: "ternary",
+      cond: {
+        kind: "unionIsTag",
+        unionId,
+        tag: undefTag,
+        negated: false,
+        value: key,
+        type: BOOL,
+        loc,
+      },
+      then: fence,
+      else_: converted,
+      type: F64,
+      loc,
+    },
+    type: F64,
+    loc,
+  };
 }
 
 /** A number argument of a builtin that converts it with ToNumber (Math

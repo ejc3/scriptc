@@ -207,6 +207,7 @@ import {
   builtinGlobalValue,
   jsHoldsDynObject,
   lowerEnvironmentKey,
+  lowerElementWriteKey,
   lowerNativeFunctionAssignment,
   lowerStrictEquality,
 } from "./lower-exprs.js";
@@ -8835,7 +8836,7 @@ function lowerAssignTargetInto(
       if (arr.type.kind === "array") {
         const recv = lowerer.declareHiddenLocal("%dtRecv", arr.type);
         out.push({ kind: "varDecl", localId: recv.id, init: arr, loc });
-        const index = lowerer.lowerExpr(t.argumentExpression);
+        const index = lowerElementWriteKey(lowerer, t.argumentExpression);
         if (index.type.kind !== "f64") {
           lowerer.unsupported("SC1090", t.argumentExpression, "indexing with non-number keys");
         }

@@ -10,6 +10,7 @@ import {
   concatOperand,
   deferredSlotOr,
   dynCompoundValue,
+  lowerElementWriteKey,
   lowerOptionalNumber,
   operatorUnsupported,
   runtimeOptionalStorageOperand,
@@ -261,7 +262,7 @@ export function lowerIncDec(
       (raw.type.kind === "array" || raw.type.kind === "bytes")
     ) {
       const receiver = save(raw, "%incrementArray");
-      const rawIndex = lowerer.lowerExpr(access.argumentExpression);
+      const rawIndex = lowerElementWriteKey(lowerer, access.argumentExpression);
       const index = save(
         rawIndex.type.kind === "dyn" && isJsSourceFile(ts.getSourceFileOfNode(expr))
           ? { kind: "libCall", fn: "dyn.toNumberCoerce", args: [rawIndex], type: F64, loc }
