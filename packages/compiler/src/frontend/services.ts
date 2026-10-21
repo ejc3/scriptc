@@ -14,6 +14,7 @@ import {
 } from "./npm-static-builtin-aliases.js";
 import { mayHoldEnumIife, rewriteEnumIifes } from "./npm-static-enum-iife.js";
 import { mayHoldTscBuiltinImport, unwrapTscBuiltinImports } from "./npm-static-tsc-helpers.js";
+import { mayHoldExportsThis, rewriteExportsThis } from "./npm-static-exports-this.js";
 import {
   mayMergeRequireDeclarations,
   splitRequireDeclarations,
@@ -117,6 +118,13 @@ export class FrontendServices {
     this.ensureOpen();
     if (!mayMergeRequireDeclarations(source)) return null;
     return splitRequireDeclarations(this.parse(path, source, "js"));
+  }
+  /** A package module with `this.X` respelled `exports.X` in exported
+   * functions that only call other exports through `this` (null: none). */
+  exportsThis(source: string, path: string): string | null {
+    this.ensureOpen();
+    if (!mayHoldExportsThis(source)) return null;
+    return rewriteExportsThis(this.parse(path, source, "js"));
   }
   /** A package module with tsc's interop bindings of builtin modules
    * unwrapped to plain requires (null: none). */

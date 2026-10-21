@@ -76,7 +76,7 @@ async function buildStatic(entry: string, npmStatic: string[] | "auto"): Promise
     ...globSync(
       join(fixturesRoot, "npm/node_modules/cryptozoo/**/*.{js,mjs,cjs,json,d.ts}"),
     ).sort(),
-    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2596)
+    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2598)
     ...globSync(join(fixturesRoot, "npm/node_modules/gt*/**/*.{js,cjs,json}")).sort(),
     ...globSync(join(fixturesRoot, "npm/store/gt*/**/*.{js,cjs,json}")).sort(),
   ];
@@ -1671,6 +1671,17 @@ describe(`npm-static pilots${sanitize ? " (sanitized)" : ""}`, () => {
     await expectNodeParity(join(fixturesRoot, "npm/cases/2596-function-export-members/main.ts"), [
       "gtspawnshape",
     ]);
+  }, 180_000);
+
+  // 2597/2598: exported functions that reach sibling exports through
+  // `this`, in a generic package and in retry 0.13.1.
+  test("exports through this 2597-exports-this byte-match Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2597-exports-this/main.ts"), [
+      "gtexportsthis",
+    ]);
+  }, 180_000);
+  test("retry 0.13.1 2598-retry-timeouts byte-matches Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2598-retry-timeouts/main.ts"), ["retry"]);
   }, 180_000);
 
   // 2562: a file with unverifiable interop that no compiled code can load
