@@ -1,0 +1,16 @@
+{
+ "order": [
+  "<repo>/tests/fixtures/npm/cases/2599-execa-shape/main.ts"
+ ],
+ "diags": [
+  {
+   "code": "SC0001",
+   "message": "Could not find a declaration file for module 'gtexecashape'. '<repo>/tests/fixtures/npm/node_modules/gtexecashape/index.js' implicitly has an 'any' type.\n  Try `npm i --save-dev @types/gtexecashape` if it exists or add a new declaration (.d.ts) file containing `declare module 'gtexecashape';`",
+   "loc": {
+    "file": "<repo>/tests/fixtures/npm/cases/2599-execa-shape/main.ts",
+    "start": 244,
+    "end": 258
+   }
+  }
+ ]
+}

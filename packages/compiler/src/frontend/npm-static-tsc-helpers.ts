@@ -57,11 +57,14 @@ function interopReferences(
     if (!ok) return "stop";
     if (!ts.isIdentifier(n) || n.text !== name || n === decl.name) return undefined;
     const parent = n.parent;
+    // A write through the wrapper (`x.default = …`, `ns.member = …`)
+    // changes the helper's object, not the module.
     if (
       parent === undefined ||
       !ts.isPropertyAccessExpression(parent) ||
       parent.expression !== n ||
-      parent.questionDotToken !== undefined
+      parent.questionDotToken !== undefined ||
+      isWriteTarget(parent)
     ) {
       ok = false;
       return "stop";
@@ -76,6 +79,41 @@ function interopReferences(
     return undefined;
   });
   return ok ? defaults : null;
+}
+
+/** Whether an access is assigned (directly or as a destructuring or
+ * for-in/of target), updated or deleted. */
+function isWriteTarget(access: ts.Expression): boolean {
+  let node: ts.Node = access;
+  while (node.parent !== undefined && ts.isParenthesizedExpression(node.parent)) node = node.parent;
+  const parent = node.parent;
+  if (parent === undefined) return false;
+  if (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent))
+    return (
+      parent.operator === ts.SyntaxKind.PlusPlusToken ||
+      parent.operator === ts.SyntaxKind.MinusMinusToken
+    );
+  if (ts.isDeleteExpression(parent)) return true;
+  let target: ts.Node = node;
+  for (;;) {
+    const up = target.parent;
+    if (up === undefined) return false;
+    if (ts.isBinaryExpression(up))
+      return (
+        up.left === target &&
+        up.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+        up.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+      );
+    if (
+      ((ts.isPropertyAssignment(up) && up.initializer === target) ||
+        ts.isSpreadElement(up) ||
+        ts.isSpreadAssignment(up)) &&
+      up.parent !== undefined
+    )
+      target = up.parent;
+    else if (ts.isArrayLiteralExpression(up) || ts.isObjectLiteralExpression(up)) target = up;
+    else return (ts.isForInStatement(up) || ts.isForOfStatement(up)) && up.initializer === target;
+  }
 }
 
 /** The module text with its builtin interop bindings unwrapped, or null. */

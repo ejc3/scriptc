@@ -64,6 +64,17 @@ test("other references, program modules and default reads of a namespace keep th
   expect(
     rewrite(`${helpers}const m = __importDefault(require("./m"));\nm.default();\n`),
   ).toBeNull();
+  // Writes through the wrapper change the helper's object, not the module.
+  expect(
+    rewrite(
+      `${helpers}const events_1 = __importDefault(require("events"));\nevents_1.default = null;\nconsole.log(events_1.default);\n`,
+    ),
+  ).toBeNull();
+  expect(
+    rewrite(
+      `${helpers}const p = __importStar(require("path"));\np.sep = "!";\n[p.extra] = [1];\nconsole.log(p.sep);\n`,
+    ),
+  ).toBeNull();
   // `ns.default` reads the namespace copy's own default.
   expect(
     rewrite(`${helpers}const p = __importStar(require("path"));\nconsole.log(p.default === p);\n`),

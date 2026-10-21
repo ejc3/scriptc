@@ -130,3 +130,37 @@ function Version() {
     ),
   ).toEqual(["version.cjs: a computed read from a runtime-optional global"]);
 });
+
+test("a class static initializer above a function export's table keeps the table optional", () => {
+  // Static field initializers and static blocks run where the class is
+  // defined, so either can call the exported function before `var t` is
+  // assigned.
+  for (const member of ["static early = module.exports();", "static { module.exports(); }"]) {
+    expect(
+      fences(
+        {
+          "main.cjs": `"use strict";
+const version = require("./version.cjs");
+console.log(version());
+`,
+          "version.cjs": `"use strict";
+exports = module.exports = Version;
+class Init {
+  ${member}
+}
+var t = {};
+var R = 0;
+function tok(n) {
+  t[n] = R++;
+}
+tok("A");
+function Version() {
+  return typeof t;
+}
+`,
+        },
+        "runtime-optional",
+      ),
+    ).toEqual(["version.cjs: a computed read from a runtime-optional global"]);
+  }
+});

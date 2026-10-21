@@ -76,7 +76,7 @@ async function buildStatic(entry: string, npmStatic: string[] | "auto"): Promise
     ...globSync(
       join(fixturesRoot, "npm/node_modules/cryptozoo/**/*.{js,mjs,cjs,json,d.ts}"),
     ).sort(),
-    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2598)
+    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2599)
     ...globSync(join(fixturesRoot, "npm/node_modules/gt*/**/*.{js,cjs,json}")).sort(),
     ...globSync(join(fixturesRoot, "npm/store/gt*/**/*.{js,cjs,json}")).sort(),
   ];
@@ -1682,6 +1682,13 @@ describe(`npm-static pilots${sanitize ? " (sanitized)" : ""}`, () => {
   }, 180_000);
   test("retry 0.13.1 2598-retry-timeouts byte-matches Node", async () => {
     await expectNodeParity(join(fixturesRoot, "npm/cases/2598-retry-timeouts/main.ts"), ["retry"]);
+  }, 180_000);
+
+  // 2599: execa 5's export shape behind destructuring requires.
+  test("execa's export shape 2599-execa-shape byte-matches Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2599-execa-shape/main.ts"), [
+      "gtexecashape",
+    ]);
   }, 180_000);
 
   // 2562: a file with unverifiable interop that no compiled code can load
