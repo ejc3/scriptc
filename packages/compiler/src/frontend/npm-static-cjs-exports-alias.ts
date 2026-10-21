@@ -62,6 +62,21 @@ function isRequireValue(expr: ts.Expression): boolean {
   return false;
 }
 
+/** `{ a, b: c }`: a destructuring of plain member reads (no defaults, no
+ * computed keys, no nested patterns, no rest), which runs no user code. */
+function plainObjectPattern(name: ts.BindingName): boolean {
+  return (
+    ts.isObjectBindingPattern(name) &&
+    name.elements.nodes.every(
+      (el) =>
+        el.dotDotDotToken === undefined &&
+        el.initializer === undefined &&
+        ts.isIdentifier(el.name) &&
+        (el.propertyName === undefined || ts.isIdentifier(el.propertyName)),
+    )
+  );
+}
+
 /** True for a statement whose evaluation runs no code that could observe
  * the export object: declarations and member writes (`F.prototype.m =
  * function …`) without calls, and directives. */
@@ -79,7 +94,9 @@ function inertOrRequire(stmt: ts.Statement, requires: boolean): boolean {
     ts.isVariableStatement(stmt) &&
     stmt.declarationList.declarations.nodes.every(
       (d) =>
-        ts.isIdentifier(d.name) && d.initializer !== undefined && isRequireValue(d.initializer),
+        (ts.isIdentifier(d.name) || plainObjectPattern(d.name)) &&
+        d.initializer !== undefined &&
+        isRequireValue(d.initializer),
     )
   )
     return true;

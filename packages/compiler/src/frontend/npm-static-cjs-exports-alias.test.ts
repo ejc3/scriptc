@@ -99,7 +99,27 @@ ${report}`);
   expect(viaConst).toContain('Version.tag = "t"');
 });
 
+test("destructured require bindings above a function export are inert", () => {
+  // execa 5: `const {a, b} = require(...)` lines sit above the export.
+  const rewritten = expectSameBehavior(`'use strict';
+const {basename, extname} = require('path');
+const Version = (v) => ({ v, base: basename(v) });
+module.exports = Version;
+module.exports.ext = (v) => extname(v);
+console.log(module.exports.ext("a.txt"), Version("/x/y").base);
+${report}`);
+  expect(rewritten).toContain("Version.ext = ");
+});
+
 test.each([
+  [
+    "a destructuring default",
+    `const {basename = 1} = require('path');\nconst Version = () => 1;\nmodule.exports = Version;\nmodule.exports.x = 1;\n`,
+  ],
+  [
+    "a destructuring rest",
+    `const {...rest} = require('path');\nconst Version = () => 1;\nmodule.exports = Version;\nmodule.exports.x = 1;\n`,
+  ],
   ["a let binding", `let Version = () => 1;\nmodule.exports = Version;\nmodule.exports.x = 1;\n`],
   [
     "a reassigned var",

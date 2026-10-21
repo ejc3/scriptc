@@ -76,7 +76,7 @@ async function buildStatic(entry: string, npmStatic: string[] | "auto"): Promise
     ...globSync(
       join(fixturesRoot, "npm/node_modules/cryptozoo/**/*.{js,mjs,cjs,json,d.ts}"),
     ).sort(),
-    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2596)
+    // the bundler-emitted-CJS mini packages (cases 2465-2469, 2556-2567, 2571, 2580-2599)
     ...globSync(join(fixturesRoot, "npm/node_modules/gt*/**/*.{js,cjs,json}")).sort(),
     ...globSync(join(fixturesRoot, "npm/store/gt*/**/*.{js,cjs,json}")).sort(),
   ];
@@ -1670,6 +1670,13 @@ describe(`npm-static pilots${sanitize ? " (sanitized)" : ""}`, () => {
   test("function export members 2596-function-export-members byte-match Node", async () => {
     await expectNodeParity(join(fixturesRoot, "npm/cases/2596-function-export-members/main.ts"), [
       "gtspawnshape",
+    ]);
+  }, 180_000);
+
+  // 2599: execa 5's export shape behind destructuring requires.
+  test("execa's export shape 2599-execa-shape byte-matches Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2599-execa-shape/main.ts"), [
+      "gtexecashape",
     ]);
   }, 180_000);
 
