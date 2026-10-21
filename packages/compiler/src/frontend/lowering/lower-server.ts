@@ -4539,6 +4539,7 @@ export function lowerHttpAgentNew(lowerer: Lowerer, expr: ts.NewExpression): IrE
   let timeout: IrExpr = numLit(-1, loc);
   let port: IrExpr = numLit(-1, loc);
   let scheduling: IrExpr = lowerer.coerceToExpected(strLit("lifo", loc), DYN);
+  let maxTotal: IrExpr = dynUndefinedExpr(loc);
   const args = expr.arguments?.nodes ?? [];
   if (args.length > 1) {
     lowerer.noLowering(
@@ -4630,6 +4631,16 @@ export function lowerHttpAgentNew(lowerer: Lowerer, expr: ts.NewExpression): IrE
           scheduling = lowerer.coerceToExpected(v, DYN);
           break;
         }
+        case "maxTotalSockets": {
+          // validateNumber(maxTotalSockets, 'maxTotalSockets', 1) runs in
+          // the runtime, after scheduling's check, as in Node.
+          const v =
+            initializer !== null
+              ? lowerer.lowerExpr(initializer)
+              : lowerer.lowerShorthandValue(prop as ts.ShorthandPropertyAssignment);
+          maxTotal = lowerer.coerceToExpected(v, DYN);
+          break;
+        }
         default:
           fenceOrDropOptionKey(
             lowerer,
@@ -4638,8 +4649,8 @@ export function lowerHttpAgentNew(lowerer: Lowerer, expr: ts.NewExpression): IrE
             api,
             bi.module === "https" ? HTTPS_AGENT_DOCUMENTED_OPTIONS : AGENT_DOCUMENTED_OPTIONS,
             bi.module === "https"
-              ? "keepAlive, keepAliveMsecs, maxSockets, maxFreeSockets, timeout, port, and scheduling are the supported options; pass TLS options such as ca and rejectUnauthorized on each https.request"
-              : "keepAlive, keepAliveMsecs, maxSockets, maxFreeSockets, timeout, port, and scheduling are the supported options",
+              ? "keepAlive, keepAliveMsecs, maxSockets, maxTotalSockets, maxFreeSockets, timeout, port, and scheduling are the supported options; pass TLS options such as ca and rejectUnauthorized on each https.request"
+              : "keepAlive, keepAliveMsecs, maxSockets, maxTotalSockets, maxFreeSockets, timeout, port, and scheduling are the supported options",
           );
       }
     }
@@ -4656,6 +4667,7 @@ export function lowerHttpAgentNew(lowerer: Lowerer, expr: ts.NewExpression): IrE
       timeout,
       port,
       scheduling,
+      maxTotal,
     ],
     type: DYN,
     loc,

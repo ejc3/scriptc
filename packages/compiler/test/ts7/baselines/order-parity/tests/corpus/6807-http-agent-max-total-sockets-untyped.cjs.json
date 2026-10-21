@@ -1,0 +1,6 @@
+{
+ "order": [
+  "<repo>/tests/corpus/6807-http-agent-max-total-sockets-untyped.cjs"
+ ],
+ "diags": []
+}

@@ -5174,6 +5174,9 @@ typedef struct ScrHttpAgentEnt {
   ScrStr *name; /* getName's shape: "host:port:" */
   ScrHttpClientReq *client; /* +1 while listed */
   bool queued;              /* waiting for a slot: the dial is deferred */
+  /* While queued: the order in which the name's queue was opened (Node's
+   * agent.requests key order). Every queued entry of one name shares it. */
+  unsigned long key_seq;
   struct ScrHttpAgentEnt *next;
 } ScrHttpAgentEnt;
 
@@ -5184,6 +5187,8 @@ typedef struct ScrHttpAgent {
   bool fifo;        /* scheduling: 'fifo' takes the oldest free socket, 'lifo' the newest */
   double ka_msecs;
   double max_sockets; /* INFINITY = Node's default */
+  double max_total;   /* maxTotalSockets: INFINITY when unset */
+  unsigned long next_key_seq;
   double max_free;
   double timeout_ms; /* < 0 = unset */
   double default_port; /* settable (agent.defaultPort = p) */
@@ -5300,6 +5305,47 @@ static void scr_http_agent_free_untake(ScrHttpAgent *a, ScrHttpAgentFree *f) {
   *link = f;
 }
 
+static void scr_http_client_rebind(ScrHttpClientReq *c, ScrHttpAgentFree *f, bool reused);
+
+/* Node's removeSocket after a socket of `name` leaves the agent: the first
+ * request queued for the name takes a free socket or a new dial; with none
+ * queued, the first queued name (in the order its queue opened) gets a new
+ * socket, unless that name has sockets in use. Requests queue under another
+ * name only when maxTotalSockets is reached. */
+static void scr_http_agent_pump(struct ScrHttpAgent *ag, const ScrStr *name) {
+  bool same = false;
+  for (ScrHttpAgentEnt *e = ag->ents; e; e = e->next) {
+    if (e->queued && e->name->len == name->len &&
+        memcmp(e->name->data, name->data, name->len) == 0) {
+      same = true;
+      ScrHttpAgentFree *f = scr_http_agent_free_take(ag, name, e->client->pool_key);
+      if (f != NULL) {
+        e->queued = false;
+        scr_http_client_rebind(e->client, f, false);
+      } else if (scr_http_agent_active(ag, name) < ag->max_sockets) {
+        e->queued = false;
+        if (e->client->sock) {
+          scr_http_conn_count(e->client->conn, ag->sock_count);
+          scr_net_sock_dial_start(e->client->sock);
+        }
+      }
+      break;
+    }
+  }
+  if (!same) {
+    ScrHttpAgentEnt *first = NULL;
+    for (ScrHttpAgentEnt *e = ag->ents; e; e = e->next)
+      if (e->queued && (first == NULL || e->key_seq < first->key_seq)) first = e;
+    if (first != NULL && scr_http_agent_active(ag, first->name) == 0) {
+      first->queued = false;
+      if (first->client->sock) {
+        scr_http_conn_count(first->client->conn, ag->sock_count);
+        scr_net_sock_dial_start(first->client->sock);
+      }
+    }
+  }
+}
+
 /* The idle socket closed (or its parser is going away): it leaves the
  * free list. */
 static void scr_http_agent_free_remove(struct ScrHttpAgent *a, struct ScrHttpConn *conn) {
@@ -5308,10 +5354,12 @@ static void scr_http_agent_free_remove(struct ScrHttpAgent *a, struct ScrHttpCon
     ScrHttpAgentFree *f = *link;
     *link = f->next;
     conn->pool_agent = NULL;
-    scr_str_release(f->name);
+    ScrStr *name = f->name;
     scr_str_release(f->pool_key);
     scr_net_sock_release(f->sock);
     free(f);
+    if (!a->destroyed) scr_http_agent_pump(a, name);
+    scr_str_release(name);
     return;
   }
   conn->pool_agent = NULL;
@@ -5413,7 +5461,7 @@ static bool scr_http_client_pool(struct ScrHttpConn *conn, struct ScrHttpClientR
   for (ScrHttpAgentEnt *e = ag->ents; e && name == NULL; e = e->next)
     if (e->client == c) name = scr_str_retain(e->name);
   if (name == NULL) return false;
-  if ((double)scr_http_agent_free_count(ag, name) >= ag->max_free) {
+  if ((double)ag->sock_count->n > ag->max_total || (double)scr_http_agent_free_count(ag, name) >= ag->max_free) {
     scr_str_release(name);
     return false;
   }
@@ -5458,25 +5506,7 @@ static void scr_http_agent_client_done(struct ScrHttpAgent *ag, struct ScrHttpCl
     scr_http_client_release(e->client);
     free(e);
   }
-  if (name != NULL && !ag->destroyed) {
-    for (ScrHttpAgentEnt *e = ag->ents; e; e = e->next) {
-      if (e->queued && e->name->len == name->len &&
-          memcmp(e->name->data, name->data, name->len) == 0) {
-        ScrHttpAgentFree *f = scr_http_agent_free_take(ag, name, e->client->pool_key);
-        if (f != NULL) {
-          e->queued = false;
-          scr_http_client_rebind(e->client, f, false);
-        } else if (scr_http_agent_active(ag, name) < ag->max_sockets) {
-          e->queued = false;
-          if (e->client->sock) {
-            scr_http_conn_count(e->client->conn, ag->sock_count);
-            scr_net_sock_dial_start(e->client->sock);
-          }
-        }
-        break;
-      }
-    }
-  }
+  if (name != NULL && !ag->destroyed) scr_http_agent_pump(ag, name);
   scr_str_release(name);
 }
 
@@ -5506,7 +5536,8 @@ static ScrStr *scr_http_agent_name(const char *host, size_t host_len, const char
 
 ScrDyn *scr_http_agent_new(bool secure, bool keep_alive, double ka_msecs,
                             double max_sockets, double max_free, double timeout_ms,
-                            double port /* < 0 = unset */, const ScrDyn *scheduling) {
+                            double port /* < 0 = unset */, const ScrDyn *scheduling,
+                            const ScrDyn *max_total) {
   scr_http_install();
   /* Node: options.scheduling || 'lifo', then validateOneOf */
   bool fifo = false;
@@ -5515,6 +5546,24 @@ ScrDyn *scr_http_agent_new(bool secure, bool keep_alive, double ka_msecs,
     if (s != NULL && s->len == 4 && memcmp(s->data, "fifo", 4) == 0) fifo = true;
     else if (s == NULL || s->len != 4 || memcmp(s->data, "lifo", 4) != 0) {
       scr_dyn_arg_value_fail("scheduling", "must be one of: 'fifo', 'lifo'", scheduling);
+      return NULL;
+    }
+  }
+  /* Node: validateNumber(maxTotalSockets, 'maxTotalSockets', 1) when set. */
+  double total = (double)INFINITY;
+  if (max_total != NULL && max_total->kind != SCR_DYN_UNDEF) {
+    if (max_total->kind != SCR_DYN_NUM) {
+      scr_dyn_arg_type_fail("maxTotalSockets", "of type number", max_total);
+      return NULL;
+    }
+    total = max_total->v.num;
+    if (!(total >= 1)) {
+      char received[48];
+      scr_num_received(total, received);
+      char text[160];
+      int n = snprintf(text, sizeof text,
+                       "The value of \"maxTotalSockets\" is out of range. It must be >= 1. Received %s", received);
+      scr_throw_error_msg_code(SCR_ERR_RANGE, text, n < 0 ? 0 : (size_t)n, "ERR_OUT_OF_RANGE");
       return NULL;
     }
   }
@@ -5530,6 +5579,7 @@ ScrDyn *scr_http_agent_new(bool secure, bool keep_alive, double ka_msecs,
   a->ka_msecs = ka_msecs >= 0 ? ka_msecs : 1000;
   a->max_sockets = max_sockets >= 0 ? max_sockets : (double)INFINITY;
   a->max_free = max_free >= 0 ? max_free : 256;
+  a->max_total = total;
   a->timeout_ms = timeout_ms;
   /* an agent-options `port` merges under portless request options (Node
    * merges agent options into each connection) — the settable
@@ -5552,7 +5602,7 @@ static SCR_TL ScrDyn *scr_http_global_agents[2];
 
 const ScrDyn *scr_http_global_agent(bool secure) {
   ScrDyn **slot = &scr_http_global_agents[secure ? 1 : 0];
-  if (*slot == NULL) *slot = scr_http_agent_new(secure, true, -1, -1, -1, 5000, -1, NULL);
+  if (*slot == NULL) *slot = scr_http_agent_new(secure, true, -1, -1, -1, 5000, -1, NULL, NULL);
   return *slot;
 }
 
@@ -5663,7 +5713,8 @@ ScrHttpClientReq *scr_http_request_agent_ex(ScrStr *host /*borrowed*/, double po
                                       socket_path ? socket_path->len : 0);
   /* a free pooled socket for the name serves the request right away */
   ScrHttpAgentFree *reuse = ag->keep_alive ? scr_http_agent_free_take(ag, name, pool_key) : NULL;
-  bool queue = reuse == NULL && scr_http_agent_active(ag, name) >= ag->max_sockets;
+  bool queue = reuse == NULL && (scr_http_agent_active(ag, name) >= ag->max_sockets ||
+                                 (double)ag->sock_count->n >= ag->max_total);
   ScrNetSocket *presock = socket_path != NULL ? scr_http_socket_dialer(socket_path, queue || reuse)
                           : queue || reuse    ? scr_net_connect_deferred(p, host)
                                               : NULL;
@@ -5688,6 +5739,16 @@ ScrHttpClientReq *scr_http_request_agent_ex(ScrStr *host /*borrowed*/, double po
   e->name = name; /* ownership moves */
   e->client = scr_http_client_retain(c);
   e->queued = queue;
+  if (queue) {
+    e->key_seq = ag->next_key_seq;
+    for (ScrHttpAgentEnt *q = ag->ents; q; q = q->next) {
+      if (q->queued && q->name->len == name->len && memcmp(q->name->data, name->data, name->len) == 0) {
+        e->key_seq = q->key_seq;
+        break;
+      }
+    }
+    if (e->key_seq == ag->next_key_seq) ag->next_key_seq++;
+  }
   ScrHttpAgentEnt **link = &ag->ents;
   while (*link) link = &(*link)->next;
   *link = e;
@@ -6854,8 +6915,9 @@ static ScrDyn *scr_http_dynh_agent_get(void *h, const char *key, size_t key_len)
     return obj;
   }
   if (strcmp(key, "totalSocketCount") == 0) return scr_dyn_new_num((double)a->sock_count->n);
+  if (strcmp(key, "maxTotalSockets") == 0) return scr_dyn_new_num(a->max_total);
   {
-    static const char *const known[] = { "options", "maxTotalSockets", NULL };
+    static const char *const known[] = { "options", NULL };
     if (scr_http_dynh_in(key, known)) {
       scr_http_dynh_unsupported("Agent", key, NULL);
       return NULL;
@@ -6868,7 +6930,8 @@ static bool scr_http_dynh_agent_set(void *h, const char *key, size_t key_len, co
   ScrHttpAgent *a = (ScrHttpAgent *)h;
   (void)key_len;
   if (strcmp(key, "defaultPort") == 0 || strcmp(key, "maxSockets") == 0 ||
-      strcmp(key, "maxFreeSockets") == 0 || strcmp(key, "keepAliveMsecs") == 0) {
+      strcmp(key, "maxFreeSockets") == 0 || strcmp(key, "keepAliveMsecs") == 0 ||
+      strcmp(key, "maxTotalSockets") == 0) {
     if (value->kind != SCR_DYN_NUM) {
       scr_dyn_arg_type_fail(key, "of type number", value);
       return true; /* handled: the exception is pending */
@@ -6876,6 +6939,7 @@ static bool scr_http_dynh_agent_set(void *h, const char *key, size_t key_len, co
     if (strcmp(key, "defaultPort") == 0) a->default_port = value->v.num;
     else if (strcmp(key, "maxSockets") == 0) a->max_sockets = value->v.num;
     else if (strcmp(key, "maxFreeSockets") == 0) a->max_free = value->v.num;
+    else if (strcmp(key, "maxTotalSockets") == 0) a->max_total = value->v.num;
     else a->ka_msecs = value->v.num;
     return true;
   }

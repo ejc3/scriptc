@@ -5196,6 +5196,8 @@ declare module "http" {
     }): string;
     maxSockets: number;
     maxFreeSockets: number;
+    /* The cap across all origins (Infinity by default). */
+    maxTotalSockets: number;
     keepAliveMsecs: number;
     readonly keepAlive: boolean;
     readonly protocol: string;

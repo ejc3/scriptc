@@ -354,7 +354,8 @@ bool scr_http_url_parts(ScrStr *url /*borrowed*/, bool secure, ScrStr **host_out
 ScrDyn *scr_http_agent_new(bool secure, bool keep_alive, double ka_msecs,
                             double max_sockets, double max_free, double timeout_ms,
                             double port /* < 0 = unset: the option-merge default */,
-                            const ScrDyn *scheduling /* borrowed; NULL = 'lifo' */); /* +1 */
+                            const ScrDyn *scheduling /* borrowed; NULL = 'lifo' */,
+                            const ScrDyn *max_total /* borrowed; NULL or undefined = unset */); /* +1 */
 ScrHttpClientReq *scr_http_request_agent_ex(ScrStr *host /*borrowed*/, double port,
                                              ScrStr *path /*borrowed*/, ScrStr *method /*borrowed*/,
                                              double timeout_ms, ScrArr *header_pairs /*borrowed*/,
