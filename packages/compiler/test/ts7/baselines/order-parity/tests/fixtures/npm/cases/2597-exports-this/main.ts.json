@@ -1,0 +1,16 @@
+{
+ "order": [
+  "<repo>/tests/fixtures/npm/cases/2597-exports-this/main.ts"
+ ],
+ "diags": [
+  {
+   "code": "SC0001",
+   "message": "Could not find a declaration file for module 'gtexportsthis'. '<repo>/tests/fixtures/npm/node_modules/gtexportsthis/index.js' implicitly has an 'any' type.\n  Try `npm i --save-dev @types/gtexportsthis` if it exists or add a new declaration (.d.ts) file containing `declare module 'gtexportsthis';`",
+   "loc": {
+    "file": "<repo>/tests/fixtures/npm/cases/2597-exports-this/main.ts",
+    "start": 203,
+    "end": 218
+   }
+  }
+ ]
+}

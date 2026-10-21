@@ -1673,6 +1673,17 @@ describe(`npm-static pilots${sanitize ? " (sanitized)" : ""}`, () => {
     ]);
   }, 180_000);
 
+  // 2597/2598: exported functions that reach sibling exports through
+  // `this`, in a generic package and in retry 0.13.1.
+  test("exports through this 2597-exports-this byte-match Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2597-exports-this/main.ts"), [
+      "gtexportsthis",
+    ]);
+  }, 180_000);
+  test("retry 0.13.1 2598-retry-timeouts byte-matches Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2598-retry-timeouts/main.ts"), ["retry"]);
+  }, 180_000);
+
   // 2599: execa 5's export shape behind destructuring requires.
   test("execa's export shape 2599-execa-shape byte-matches Node", async () => {
     await expectNodeParity(join(fixturesRoot, "npm/cases/2599-execa-shape/main.ts"), [

@@ -1,0 +1,16 @@
+{
+ "order": [
+  "<repo>/tests/fixtures/npm/cases/2598-retry-timeouts/main.ts"
+ ],
+ "diags": [
+  {
+   "code": "SC0001",
+   "message": "Could not find a declaration file for module 'retry'. '<repo>/tests/fixtures/npm/node_modules/retry/index.js' implicitly has an 'any' type.\n  Try `npm i --save-dev @types/retry` if it exists or add a new declaration (.d.ts) file containing `declare module 'retry';`",
+   "loc": {
+    "file": "<repo>/tests/fixtures/npm/cases/2598-retry-timeouts/main.ts",
+    "start": 230,
+    "end": 237
+   }
+  }
+ ]
+}
