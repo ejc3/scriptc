@@ -2482,6 +2482,12 @@
       "status": "static"
     },
     {
+      "id": "node-builtin.url.resolveObject",
+      "kind": "node-builtin",
+      "name": "url.resolveObject",
+      "status": "static"
+    },
+    {
       "id": "node-builtin.util",
       "kind": "node-builtin",
       "name": "util",
