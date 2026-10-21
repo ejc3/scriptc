@@ -1,0 +1,6 @@
+{
+ "order": [
+  "<repo>/tests/corpus/6717-dyn-error-structured-clone.ts"
+ ],
+ "diags": []
+}

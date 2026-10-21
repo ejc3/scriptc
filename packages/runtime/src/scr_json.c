@@ -11154,6 +11154,70 @@ typedef struct ScrScParent {
 /* The clone is a fresh tree (shared inputs are copied per path, cycles
  * throw), so it is tagged like a parse result (ScrDynRegion); a leaf the
  * region may not hold clears it. */
+static ScrDyn *scr_sc_clone(const ScrDyn *v, const ScrScParent *up, ScrDynRegion *region);
+
+/* structuredClone of an error, as V8 serializes one: a new error whose
+ * prototype follows `name` when it names a standard error constructor
+ * (Error otherwise), with the source's own `message`, its `stack` and its
+ * own `cause` (cloned), all non-enumerable. Other properties are not
+ * copied. `view` is the error's property view and `native` its native
+ * error, when it has one (borrowed). */
+static ScrDyn *scr_sc_clone_error(const ScrDyn *view, ScrError *native, const ScrScParent *up,
+                                  ScrDynRegion *region) {
+  static const char *const names[] = {"Error", "EvalError", "RangeError", "ReferenceError",
+                                      "SyntaxError", "TypeError", "URIError"};
+  static const int kinds[] = {SCR_ERR_ERROR, SCR_ERR_EVAL, SCR_ERR_RANGE, SCR_ERR_REFERENCE,
+                              SCR_ERR_SYNTAX, SCR_ERR_TYPE, SCR_ERR_URI};
+  int kind = SCR_ERR_ERROR;
+  ScrDyn *name = scr_dyn_obj_read(view, "name", 4);
+  if (!name) return NULL;
+  if (name->kind == SCR_DYN_STR)
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
+      if (name->v.str->len == strlen(names[i]) && memcmp(name->v.str->data, names[i], name->v.str->len) == 0)
+        kind = kinds[i];
+  scr_dyn_release(name);
+  ScrDyn *stack = native ? NULL : scr_dyn_obj_read(view, "stack", 5);
+  if (!native && !stack) return NULL;
+  ScrStr *native_stack = native ? scr_error_stack(native) : NULL;
+  ScrDyn *cause = NULL;
+  const ScrDyn *own_cause = scr_dyn_obj_get(view, "cause", 5);
+  if (own_cause) {
+    cause = scr_sc_clone(own_cause, up, region);
+    if (!cause) {
+      scr_dyn_release(stack);
+      scr_str_release(native_stack);
+      return NULL;
+    }
+  }
+  ScrError *error = scr_error_new(kind, NULL);
+  ScrDyn *out = scr_dyn_from_error(error);
+  const ScrDyn *message = scr_dyn_obj_get(view, "message", 7);
+  if (message) {
+    ScrStr *text = scr_dyn_string_coerce_js(message);
+    if (text) {
+      scr_dyn_obj_set(out, "message", 7, scr_dyn_new_str(text));
+      out->v.obj.entries[out->v.obj.len - 1].enumerable = false;
+      scr_str_release(text);
+    }
+  }
+  if (cause) {
+    scr_dyn_obj_set(out, "cause", 5, cause);
+    out->v.obj.entries[out->v.obj.len - 1].enumerable = false;
+  }
+  if (!scr_exc_pending()) scr_error_commit_dyn(error, out);
+  if (native_stack) scr_error_set_stack(error, native_stack);
+  else if (stack && stack->kind == SCR_DYN_STR) scr_error_set_stack(error, stack->v.str);
+  scr_str_release(native_stack);
+  scr_dyn_release(stack);
+  scr_error_release(error);
+  if (scr_exc_pending()) {
+    scr_dyn_release(out);
+    return NULL;
+  }
+  region->intact = false;
+  return out;
+}
+
 static ScrDyn *scr_sc_clone(const ScrDyn *v, const ScrScParent *up, ScrDynRegion *region) {
   if (scr_uncloneable_count && scr_uncloneable_marked(v)) {
     scr_throw_domex("DataCloneError", "Cannot clone object of unsupported type.");
@@ -11219,6 +11283,12 @@ static ScrDyn *scr_sc_clone(const ScrDyn *v, const ScrScParent *up, ScrDynRegion
       }
     }
     ScrScParent self = {v, up};
+    if (v->kind == SCR_DYN_OBJ && scr_dyn_error_encoding(v)) {
+      ScrError *native = scr_errdyn_err_of(v);
+      ScrDyn *out = scr_sc_clone_error(v, native, &self, region);
+      scr_error_release(native);
+      return out;
+    }
     if (v->kind == SCR_DYN_ARR) {
       ScrDyn *out = scr_dyn_new_arr();
       for (size_t i = 0; i < v->v.arr.len; i++) {
@@ -11260,6 +11330,25 @@ static ScrDyn *scr_sc_clone(const ScrDyn *v, const ScrScParent *up, ScrDynRegion
 
   case SCR_DYN_TYPED_REF: {
     ScrDyn *materialized = scr_dyn_typed_ref_materialize(v);
+    ScrError *native = scr_errdyn_err_of(v);
+    if (native && materialized->kind == SCR_DYN_OBJ) {
+      for (const ScrScParent *p = up; p != NULL; p = p->up) {
+        if (p->node == v) {
+          static const char msg[] =
+              "structuredClone of cyclic values (the checked-dynamic tree cannot represent cycles) is not supported yet";
+          scr_throw_error_msg(SCR_ERR_ERROR, msg, sizeof msg - 1);
+          scr_error_release(native);
+          scr_dyn_release(materialized);
+          return NULL;
+        }
+      }
+      ScrScParent self = {v, up};
+      ScrDyn *out = scr_sc_clone_error(materialized, native, &self, region);
+      scr_error_release(native);
+      scr_dyn_release(materialized);
+      return out;
+    }
+    scr_error_release(native);
     ScrDyn *out = scr_sc_clone(materialized, up, region);
     scr_dyn_release(materialized);
     return out;
