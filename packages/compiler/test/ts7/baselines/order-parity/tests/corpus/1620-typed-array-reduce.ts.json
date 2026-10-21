@@ -1,0 +1,6 @@
+{
+ "order": [
+  "<repo>/tests/corpus/1620-typed-array-reduce.ts"
+ ],
+ "diags": []
+}
