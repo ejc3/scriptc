@@ -662,6 +662,15 @@ function wholeExportWrites(lowerer: Lowerer, dep: ts.SourceFile): ReadonlySet<st
         parent.name === node
       )
         return undefined;
+      // The module storing the function as one of its own member exports
+      // (`module.exports.spawn = spawn`) writes no member of the function.
+      if (
+        ts.isBinaryExpression(parent) &&
+        parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        parent.right === node &&
+        cjsExportAssignmentOf(topLevelStatementOf(node))?.kind === "member"
+      )
+        return undefined;
       use(node);
       return undefined;
     });
