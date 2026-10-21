@@ -1,0 +1,6 @@
+{
+ "order": [
+  "<repo>/tests/corpus/1625-assign-through-non-null-target.ts"
+ ],
+ "diags": []
+}
