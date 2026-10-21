@@ -237,6 +237,7 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "emitter.emitFlex",
   "emitter.emitError",
   "emitter.on",
+  "emitter.onWrapped",
   "emitter.off",
   "emitter.checkListener",
   "emitter.onDyn",
@@ -799,6 +800,10 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "error.propTypeThrow",
   "emitter.setMaxChk",
   "emitter.setDefaultMaxChk",
+  // captureRejections' validateBoolean (the options read may run a getter).
+  "emitter.newOptions",
+  "emitter.ctorOptions",
+  "emitter.setCaptureDefault",
   "fs.readFileSyncBytes",
   "fs.writeFileSyncBytes",
   "fs.appendFileSyncBytes",

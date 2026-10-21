@@ -5395,6 +5395,28 @@ export function runtimeClassConstructs(lowerer: Lowerer, functions: IrFunction[]
     .map((name) => runtimeClassConstruct(lowerer.runtimeClassValues.get(name)!));
 }
 
+/** `new EventEmitter([options])`: the runtime-provided emitter, with the
+ * options' captureRejections (checked-dynamic, validated at runtime). */
+function lowerEmitterNew(lowerer: Lowerer, expr: ts.NewExpression, loc: SrcLoc): IrExpr {
+  const args = expr.arguments?.nodes ?? [];
+  const type: IrType = { kind: "object", className: RUNTIME_EMITTER_CLASS };
+  if (args.length > 1 || args.some(ts.isSpreadElement)) {
+    lowerer.unsupported(
+      "SC1090",
+      args[0]!,
+      "EventEmitter constructor arguments beyond the options",
+    );
+  }
+  if (args.length === 0) return { kind: "libCall", fn: "emitter.new", args: [], type, loc };
+  return {
+    kind: "libCall",
+    fn: "emitter.newOptions",
+    args: [lowerer.lowerExprExpecting(args[0]!, DYN)],
+    type,
+    loc,
+  };
+}
+
 /** `%C.construct` for a runtime-provided class value: the thunk's target,
  * which builds the instance through the runtime constructor the direct
  * `new C(...)` uses (emitter.new, a stream's .newDyn without options,
@@ -8472,11 +8494,14 @@ export function lowerDerivedCtorBody(
       statements.push(lowerer.superCallStmt(info, thisLocal, [pack], loc));
     } else {
       const base = superBaseOf(info)!;
-      if (base.builtinEmitter && superCall.arguments.nodes.length > 0)
+      if (
+        base.builtinEmitter &&
+        (superCall.arguments.nodes.length > 1 || superCall.arguments.nodes.some(ts.isSpreadElement))
+      )
         lowerer.unsupported(
           "SC1090",
           superCall,
-          "EventEmitter constructor options ('captureRejections')",
+          "EventEmitter constructor arguments beyond the options",
         );
       if (base.builtinStream) {
         statements.push(
@@ -8520,7 +8545,7 @@ export function lowerDerivedCtorBody(
             : base.builtinError
               ? lowerer.errorConstructorArgs(superCall.arguments.nodes, loc, superCall)
               : base.builtinEmitter
-                ? []
+                ? superCall.arguments.nodes.map((arg) => lowerer.lowerExprExpecting(arg, DYN))
                 : lowerer.completeArgs(
                     surplus
                       ? superCall.arguments.nodes.slice(0, base.ctorParams.length)
@@ -8704,19 +8729,23 @@ export function superCallStmt(
     };
   }
   if (base.builtinEmitter) {
-    // super() into the runtime-provided EventEmitter: the emitted
+    // super([options]) into the runtime-provided EventEmitter: the emitted
     // allocation already initialized the prefix (registry NULL, display
-    // name stamped), so the call is a placeholder site. Receiver
-    // borrowed, like error.ctor.
+    // name stamped); the call applies the captureRejections default or the
+    // options' value. Receiver borrowed, like error.ctor.
+    const recv = lowerer.upcastTo(thisRef, base.def.name);
     return {
       kind: "exprStmt",
-      expr: {
-        kind: "libCall",
-        fn: "emitter.ctor",
-        args: [lowerer.upcastTo(thisRef, base.def.name)],
-        type: VOID,
-        loc,
-      },
+      expr:
+        args.length === 0
+          ? { kind: "libCall", fn: "emitter.ctor", args: [recv], type: VOID, loc }
+          : {
+              kind: "libCall",
+              fn: "emitter.ctorOptions",
+              args: [recv, lowerer.coerceToExpected(args[0]!, DYN)],
+              type: VOID,
+              loc,
+            },
       loc,
     };
   }
@@ -9033,9 +9062,10 @@ export function inheritedBuiltinCtorFence(
 }
 
 /** `new C(args)` where C's constructor is the inherited runtime stream or
- * EventEmitter constructor (a ctor-less chain into the base): that
- * constructor takes zero arguments here (the options bag fences, like the
- * super() form), so arguments report at the first one. Applies to direct
+ * EventEmitter constructor (a ctor-less chain into the base): a stream's
+ * takes zero arguments here, so arguments report at the first one. The
+ * emitter's takes its options in direct construction (`directNew`) and
+ * none through a class value. Applies to direct
  * construction and to construction through a class value of C. Stream
  * subclasses come first: their chain roots at the emitter too, but the
  * message should name the stream story. */
@@ -9043,6 +9073,7 @@ function refuseInheritedBuiltinCtorArgs(
   lowerer: Lowerer,
   info: ClassInfo,
   expr: ts.NewExpression,
+  directNew = false,
 ): void {
   const first = expr.arguments?.nodes[0];
   if (first === undefined) return;
@@ -9053,8 +9084,17 @@ function refuseInheritedBuiltinCtorArgs(
       "declare a constructor that passes an inline options object to super(...)",
     );
   }
-  if (lowerer.inheritsBuiltinEmitterCtor(info)) {
-    lowerer.unsupported("SC1090", first, "EventEmitter constructor options ('captureRejections')");
+  if (
+    lowerer.inheritsBuiltinEmitterCtor(info) &&
+    (expr.arguments!.nodes.length > 1 || ts.isSpreadElement(first) || !directNew)
+  ) {
+    lowerer.unsupported(
+      "SC1090",
+      first,
+      directNew
+        ? "EventEmitter constructor arguments beyond the options"
+        : "EventEmitter constructor options ('captureRejections') through a class value or a computed base",
+    );
   }
 }
 
@@ -9182,7 +9222,55 @@ function lowerProgramClassNew(
       "construction through a function-local class's internal name",
     );
   lowerer.noteEdge(`%${info.def.name}.constructor`);
-  refuseInheritedBuiltinCtorArgs(lowerer, info, expr);
+  let computedBase = false;
+  for (let c: ClassInfo | null = info; c; c = c.base)
+    if (c.def.baseValueGlobal) computedBase = true;
+  refuseInheritedBuiltinCtorArgs(lowerer, info, expr, !computedBase);
+  // A ctor-less chain into the runtime EventEmitter takes the options
+  // after construction: they evaluate first, and only the capture flag
+  // they set is observable.
+  const emitterOptions = expr.arguments?.nodes[0];
+  if (emitterOptions !== undefined && !computedBase && lowerer.inheritsBuiltinEmitterCtor(info)) {
+    const type: IrType = { kind: "object", className: info.def.name };
+    const opts = lowerer.declareHiddenLocal("%eeOptions", DYN);
+    const built = lowerer.declareHiddenLocal("%ee", type);
+    const construct = constructedValue(lowerer, info, {
+      kind: "new",
+      className: info.def.name,
+      args: [],
+      type,
+      loc,
+    });
+    return {
+      kind: "seqExpr",
+      stmts: [
+        {
+          kind: "varDecl",
+          localId: opts.id,
+          init: lowerer.lowerExprExpecting(emitterOptions, DYN),
+          loc,
+        },
+        { kind: "varDecl", localId: built.id, init: construct, loc },
+        {
+          kind: "exprStmt",
+          expr: {
+            kind: "libCall",
+            fn: "emitter.ctorOptions",
+            args: [
+              { kind: "varRef", localId: built.id, type, loc },
+              { kind: "varRef", localId: opts.id, type: DYN, loc },
+            ],
+            type: VOID,
+            loc,
+          },
+          loc,
+        },
+      ],
+      result: { kind: "varRef", localId: built.id, type, loc },
+      type,
+      loc,
+    };
+  }
   // A ctor-less chain into a builtin error base inherits both arguments;
   // each synthesized constructor forwards the same pair to its base.
   const args = lowerer.inheritsBuiltinErrorCtor(info)
@@ -9404,22 +9492,7 @@ export function lowerNew(lowerer: Lowerer, expr: ts.NewExpression): IrExpr {
         ? lowerer.checker.getAliasedSymbol(memberSym)
         : memberSym;
     const emitterInfo = lowerer.builtinEmitterInfoOf(resolved);
-    if (emitterInfo) {
-      if ((expr.arguments?.nodes ?? []).length > 0) {
-        lowerer.unsupported(
-          "SC1090",
-          expr.arguments!.nodes[0]!,
-          "EventEmitter constructor options ('captureRejections')",
-        );
-      }
-      return {
-        kind: "libCall",
-        fn: "emitter.new",
-        args: [],
-        type: { kind: "object", className: RUNTIME_EMITTER_CLASS },
-        loc,
-      };
-    }
+    if (emitterInfo) return lowerEmitterNew(lowerer, expr, loc);
     // `new stream.Readable({...})` — the namespace-member (and CJS
     // `require('stream').Readable`) construction form.
     const fsStreamNs = fsStreamClassOf(lowerer, resolved);
@@ -9676,22 +9749,7 @@ export function lowerNew(lowerer: Lowerer, expr: ts.NewExpression): IrExpr {
     // through one libCall. Zero arguments — the options bag
     // (@types/node's captureRejections) has no lowering.
     const emitterInfo = lowerer.builtinEmitterInfoOf(symbol);
-    if (emitterInfo) {
-      if ((expr.arguments?.nodes ?? []).length > 0) {
-        lowerer.unsupported(
-          "SC1090",
-          expr.arguments!.nodes[0]!,
-          "EventEmitter constructor options ('captureRejections')",
-        );
-      }
-      return {
-        kind: "libCall",
-        fn: "emitter.new",
-        args: [],
-        type: { kind: "object", className: RUNTIME_EMITTER_CLASS },
-        loc,
-      };
-    }
+    if (emitterInfo) return lowerEmitterNew(lowerer, expr, loc);
     // `new Readable({...})` and the other stream classes: the options
     // object parses structurally in the stream spoke.
     const fsStream = fsStreamClassOf(lowerer, symbol);

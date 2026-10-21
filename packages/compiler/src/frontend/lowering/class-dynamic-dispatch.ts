@@ -72,6 +72,7 @@ import { emitterRooted } from "./lower-event-emitter.js";
 import { protocolArm, protocolFieldArm } from "./class-protocol-dispatch.js";
 import { STREAM_OPERATORS } from "./lower-stream.js";
 import { deletedPropertyNames, fixedFieldFamily } from "./js-class-fields.js";
+import { builtinClassSymbolKey } from "./symbol-fields.js";
 
 const STREAM_METHODS = new Set([
   "on",
@@ -147,6 +148,8 @@ function symbolMemberKey(
   if (info.symbolMethods !== undefined) {
     for (const [symbol, member] of info.symbolMethods) {
       if (member !== name) continue;
+      const builtin = builtinClassSymbolKey(lowerer, symbol, loc);
+      if (builtin) return lowerer.coerceToExpected(builtin, DYN);
       const global = lowerer.globalsBySymbol.get(symbol);
       if (global) return lowerer.coerceToExpected(varRef(global.id, global.type, loc), DYN);
     }
@@ -2937,6 +2940,11 @@ export class ClassDynamicDispatch {
           if (info.symbolMethods)
             for (const [symbol, name] of info.symbolMethods) symbolEntries.push([symbol, name]);
           for (const [symbol, name] of symbolEntries) {
+            const builtin = builtinClassSymbolKey(lowerer, symbol, loc);
+            if (builtin) {
+              symbols.set(name, lowerer.coerceToExpected(builtin, DYN));
+              continue;
+            }
             const declaration = symbol.valueDeclaration;
             // Module-scope consts and CommonJS key-table properties
             // (classSymbolKeyOfSymbol) both hold their key in a global.

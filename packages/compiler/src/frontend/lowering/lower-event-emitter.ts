@@ -51,10 +51,12 @@ import { isJsSourceFile, locOf } from "../program.js";
 import {
   arrayOf,
   BOOL,
+  CAUGHT,
   canBoxFuncIntoDyn,
   canConvertToDyn,
   DYN,
   F64,
+  funcOf,
   type IrExpr,
   type IrFunction,
   type IrLocal,
@@ -63,13 +65,15 @@ import {
   type IrType,
   isUnitType,
   STRING,
+  RUNTIME_EMITTER_CLASS,
   type SrcLoc,
+  SYMBOL_T,
   typeEquals,
   typeKey,
   VOID,
 } from "../../ir/ir.js";
 import { STREAM_FORCED_EVENT_NAMES, streamForcedTuple, streamSidesOf } from "./lower-stream.js";
-import { boolLit, strLit, varRef } from "../../ir/build.js";
+import { boolLit, dynUndefinedExpr, strLit, varRef } from "../../ir/build.js";
 import { tryLowerExpression } from "./expressions/try-lower-expression.js";
 import { lowerAddAbortListener } from "./builtin-calls.js";
 import { requestGeneralStreamSurface } from "./general-streams.js";
@@ -974,7 +978,8 @@ function lowerListenerArg(
   // (expression-body arrows, mustCall wrappers) register fine — the
   // emitted invoke adapter calls through the listener's true signature
   // and discards (releasing refcounted results). An async listener's
-  // promise is abandoned unobserved (SEMANTICS.md).
+  // promise is abandoned unobserved (SEMANTICS.md) unless the program may
+  // capture rejections (lowerCapturingListener).
   if (META_EVENTS.has(name) && cbT.params.length > 1) {
     lowerer.noLowering(
       `'${name}' listeners taking the listener-function argument`,
@@ -999,6 +1004,293 @@ function lowerListenerArg(
     }
   }
   return cb;
+}
+
+/** Whether some source file names captureRejections (the only way an
+ * emitter starts capturing). */
+function eventsCaptureReachable(lowerer: Lowerer): boolean {
+  if (lowerer.eventsCaptureReachable === null) {
+    lowerer.eventsCaptureReachable = lowerer.program
+      .getSourceFiles()
+      .some((file) => !file.isDeclarationFile && file.text.includes("captureRejections"));
+  }
+  return lowerer.eventsCaptureReachable;
+}
+
+/** A promise-returning listener on a program that may capture rejections:
+ * the entry's identity stays the listener (off() and listeners() see it),
+ * while emit calls a wrapper that calls it and, when the emitter captures
+ * at that moment, watches the promise — Node's addCatch. A rejection
+ * reaches the emitter's [captureRejectionSymbol] method or its 'error'
+ * listeners on a later tick, with the emitted arguments. */
+function lowerCapturingListener(
+  lowerer: Lowerer,
+  receiver: IrExpr,
+  name: string,
+  cb: IrExpr,
+  tuple: IrType[],
+  once: boolean,
+  prepend: boolean,
+  node: ts.Expression,
+  loc: SrcLoc,
+): IrExpr {
+  const cbT = cb.type as IrType & { kind: "func" };
+  const bad = tuple.find((t) => t.kind !== "dyn" && !lowerer.dynConvertible(t));
+  if (bad !== undefined) {
+    lowerer.noLowering(
+      `an async '${name}' listener whose event carries a '${lowerer.fmt(bad)}' argument`,
+      node,
+      "a captured rejection passes the emitted arguments to the emitter's rejection handler, so each must convert to a checked-dynamic value",
+    );
+  }
+  const recvTmp = lowerer.declareHiddenLocal("%ee", receiver.type);
+  const cbTmp = lowerer.declareHiddenLocal("%listener", cbT);
+  const factory = capturingListenerFactory(lowerer, receiver.type, cbT, tuple, loc);
+  return {
+    kind: "seqExpr",
+    stmts: [
+      { kind: "varDecl", localId: recvTmp.id, init: receiver, loc },
+      { kind: "varDecl", localId: cbTmp.id, init: cb, loc },
+    ],
+    result: {
+      kind: "libCall",
+      fn: "emitter.onWrapped",
+      args: [
+        varRef(recvTmp.id, receiver.type, loc),
+        eventNameExpr(name, loc),
+        varRef(cbTmp.id, cbT, loc),
+        {
+          kind: "call",
+          callee: factory,
+          args: [
+            varRef(cbTmp.id, cbT, loc),
+            varRef(recvTmp.id, receiver.type, loc),
+            eventNameExpr(name, loc),
+          ],
+          type: funcOf(tuple, VOID),
+          loc,
+        },
+        boolLit(once, loc),
+        boolLit(prepend, loc),
+      ],
+      type: receiver.type,
+      loc,
+    },
+    type: receiver.type,
+    loc,
+  };
+}
+
+/** The factory of lowerCapturingListener's wrapper, one per (emitter,
+ * listener, tuple) type: `(f, ee, name) => (...tuple) => { const p =
+ * f(...prefix); if (capturing(ee)) watch(p, ee, ee, name, [...tuple]) }`. */
+function capturingListenerFactory(
+  lowerer: Lowerer,
+  recvT: IrType,
+  cbT: IrType & { kind: "func" },
+  tuple: IrType[],
+  loc: SrcLoc,
+): string {
+  const key = `events.capture:${typeKey(recvT)}:${typeKey(cbT)}:${tuple.map(typeKey).join(",")}`;
+  const known = lowerer.arrHofHelpers.get(key);
+  if (known !== undefined) return known;
+  const name = `%events.capture.${lowerer.arrHofHelpers.size}`;
+  lowerer.arrHofHelpers.set(key, name);
+  const watch = capturingWatchHelper(lowerer, recvT, cbT.ret, loc);
+  const wrapperT = funcOf(tuple, VOID);
+  const impl = `${name}.impl`;
+  const f: IrLocal = { id: "f.0", name: "f", type: cbT, mutable: false, boxed: true };
+  const ee: IrLocal = { id: "ee.0", name: "ee", type: recvT, mutable: false, boxed: true };
+  const ev: IrLocal = { id: "name.0", name: "name", type: STRING, mutable: false, boxed: true };
+  const captured = [f, ee, ev];
+  const params: IrParam[] = tuple.map((type, i) => ({ localId: `a${i}.0`, name: `a${i}`, type }));
+  const ctx = newFnCtx(false, null, null, VOID);
+  lowerer.fnStack.push(ctx);
+  let body: IrStmt[];
+  try {
+    const p = lowerer.declareHiddenLocal("%p", cbT.ret);
+    const boxed = params.map((param) =>
+      lowerer.coerceToExpected(varRef(param.localId, param.type, loc), DYN),
+    );
+    body = [
+      {
+        kind: "varDecl",
+        localId: p.id,
+        init: {
+          kind: "callValue",
+          callee: varRef(f.id, cbT, loc),
+          args: params
+            .slice(0, cbT.params.length)
+            .map((param) => varRef(param.localId, param.type, loc)),
+          type: cbT.ret,
+          loc,
+        },
+        loc,
+      },
+      {
+        kind: "if",
+        cond: {
+          kind: "libCall",
+          fn: "emitter.capturing",
+          args: [varRef(ee.id, recvT, loc)],
+          type: BOOL,
+          loc,
+        },
+        then: [
+          {
+            kind: "exprStmt",
+            expr: {
+              kind: "call",
+              callee: watch,
+              args: [
+                varRef(p.id, cbT.ret, loc),
+                varRef(ee.id, recvT, loc),
+                lowerer.coerceToExpected(
+                  lowerer.upcastTo(varRef(ee.id, recvT, loc), RUNTIME_EMITTER_CLASS),
+                  DYN,
+                ),
+                varRef(ev.id, STRING, loc),
+                { kind: "arrayLit", elems: boxed, type: arrayOf(DYN), loc },
+              ],
+              type: { kind: "promise", inner: VOID },
+              loc,
+            },
+            loc,
+          },
+        ],
+        else_: null,
+        loc,
+      },
+    ];
+  } finally {
+    lowerer.fnStack.pop();
+  }
+  lowerer.liftedFns.push({
+    name: impl,
+    params,
+    returnType: VOID,
+    captures: captured.map((c) => ({ localId: c.id, name: c.name, type: c.type })),
+    locals: [
+      ...captured,
+      ...params.map((param) => ({
+        id: param.localId,
+        name: param.name,
+        type: param.type,
+        mutable: false,
+      })),
+      ...ctx.locals,
+    ],
+    body,
+    loc,
+  });
+  lowerer.liftedFns.push({
+    name,
+    params: captured.map((c) => ({ localId: c.id, name: c.name, type: c.type })),
+    returnType: wrapperT,
+    locals: captured,
+    body: [
+      {
+        kind: "return",
+        value: {
+          kind: "closure",
+          fnName: impl,
+          captures: captured.map((c) => c.id),
+          type: wrapperT,
+          loc,
+        },
+        loc,
+      },
+    ],
+    loc,
+  });
+  return name;
+}
+
+/** The async half of the capture: `async (p, ee, eeDyn, name, args) => {
+ * try { await p } catch (err) { rejected(ee, eeDyn,
+ * eeDyn[captureRejectionSymbol], err, name, args) } }` — the await is
+ * Node's then(undefined, ...) reaction, one microtask after the rejection;
+ * the runtime defers the handler a further tick. The handler read is a
+ * checked-dynamic symbol read of the typed emitter, so class dispatch
+ * answers the class's [captureRejectionSymbol] method. */
+function capturingWatchHelper(lowerer: Lowerer, recvT: IrType, promT: IrType, loc: SrcLoc): string {
+  const key = `events.capture.watch:${typeKey(recvT)}:${typeKey(promT)}`;
+  const known = lowerer.arrHofHelpers.get(key);
+  if (known !== undefined) return known;
+  const name = `%events.capture.${lowerer.arrHofHelpers.size}`;
+  lowerer.arrHofHelpers.set(key, name);
+  const inner = (promT as IrType & { kind: "promise" }).inner;
+  const funcType: IrType & { kind: "func" } = {
+    kind: "func",
+    params: [promT, recvT, DYN, STRING, arrayOf(DYN)],
+    ret: { kind: "promise", inner: VOID },
+  };
+  const ctx = newFnCtx(true, null, funcType, VOID);
+  ctx.isAsync = true;
+  lowerer.fnStack.push(ctx);
+  try {
+    const locals = funcType.params.map((type, i) =>
+      lowerer.declareHiddenLocal(["p", "ee", "eeDyn", "name", "args"][i]!, type),
+    );
+    const err = lowerer.declareHiddenLocal("err", CAUGHT);
+    const ref = (i: number): IrExpr => varRef(locals[i]!.id, locals[i]!.type, loc);
+    lowerer.liftedFns.push({
+      name,
+      params: locals.map((l) => ({ localId: l.id, name: l.name, type: l.type })),
+      returnType: VOID,
+      locals: ctx.locals,
+      body: [
+        {
+          kind: "tryCatch",
+          tryBody: [
+            { kind: "exprStmt", expr: { kind: "awaitExpr", value: ref(0), type: inner, loc }, loc },
+          ],
+          catchBody: [
+            {
+              kind: "exprStmt",
+              expr: {
+                kind: "libCall",
+                fn: "emitter.rejected",
+                args: [
+                  ref(1),
+                  ref(2),
+                  {
+                    kind: "dynKeyGet",
+                    value: lowerer.coerceToExpected(
+                      lowerer.upcastTo(ref(1), RUNTIME_EMITTER_CLASS),
+                      DYN,
+                    ),
+                    key: lowerer.coerceToExpected(
+                      lowerEventsCaptureMember("captureRejectionSymbol", loc)!,
+                      DYN,
+                    ),
+                    optional: true,
+                    type: DYN,
+                    loc,
+                  },
+                  { kind: "caughtToDyn", value: varRef(err.id, CAUGHT, loc), type: DYN, loc },
+                  ref(3),
+                  ref(4),
+                ],
+                type: VOID,
+                loc,
+              },
+              loc,
+            },
+          ],
+          catchLocalId: err.id,
+          finallyBody: null,
+          loc,
+        },
+        { kind: "return", value: null, loc },
+      ],
+      loc,
+      async: true,
+    });
+  } finally {
+    lowerer.fnStack.pop();
+  }
+  return name;
 }
 
 /** `recv.<member>(...)` over an emitter-rooted receiver — the whole
@@ -1316,6 +1608,24 @@ export function lowerEmitterMethodCall(
       );
     }
     const cb = lowerListenerArg(lowerer, member, name, args[1]!, tuple);
+    if (
+      registering &&
+      cb.type.kind === "func" &&
+      cb.type.ret.kind === "promise" &&
+      eventsCaptureReachable(lowerer)
+    ) {
+      return lowerCapturingListener(
+        lowerer,
+        receiver,
+        name,
+        cb,
+        tuple,
+        once,
+        prepend,
+        args[1]!,
+        loc,
+      );
+    }
     return {
       kind: "libCall",
       fn: registering ? "emitter.on" : "emitter.off",
@@ -2254,6 +2564,25 @@ function eventsOnceSignal(lowerer: Lowerer, node: ts.Expression): IrExpr | null 
  * turn the event's tuple into the array. EventTarget receivers, a stream's
  * 'data' event, computed names and options other than a literal { signal }
  * are refused. */
+/** The module's live capture members as values: captureRejectionSymbol
+ * is Symbol.for('nodejs.rejection'); captureRejections reads the default
+ * new emitters take. Null for every other member. */
+export function lowerEventsCaptureMember(member: string, loc: SrcLoc): IrExpr | null {
+  if (member === "captureRejectionSymbol") {
+    return {
+      kind: "libCall",
+      fn: "sym.for",
+      args: [strLit("nodejs.rejection", loc)],
+      type: SYMBOL_T,
+      loc,
+    };
+  }
+  if (member === "captureRejections") {
+    return { kind: "libCall", fn: "emitter.captureDefault", args: [], type: BOOL, loc };
+  }
+  return null;
+}
+
 export function lowerEventsOnce(lowerer: Lowerer, call: ts.CallExpression, loc: SrcLoc): IrExpr {
   const args = call.arguments.nodes;
   if (args.length < 2 || args.length > 3 || args.some(ts.isSpreadElement)) {
@@ -2338,6 +2667,160 @@ export function lowerEventsOnce(lowerer: Lowerer, call: ts.CallExpression, loc: 
     args: signal === null ? common : [...common, signal],
     type: resultT,
     loc,
+  };
+}
+
+/** What a for-await loop over events.on(emitter, name[, options]) opens
+ * (lower-async-iteration.ts): the emitter, the event, the boxers that turn
+ * the event's and the 'error' tuple into the argument arrays, the signal
+ * (a checked-dynamic AbortSignal or undefined) and the close events with
+ * their boxers. */
+export interface EventsOnPlan {
+  open: IrExpr;
+  closes: { name: string; boxer: IrExpr }[];
+  signalled: boolean;
+}
+
+/** The options of events.on: an object literal with `signal` and `close`
+ * (an array literal of event names). The watermark options only matter for
+ * emitters that can pause, and are refused. */
+function eventsOnOptions(
+  lowerer: Lowerer,
+  node: ts.Expression,
+): { signal: IrExpr | null; close: { name: string; node: ts.Expression }[] } {
+  const result: { signal: IrExpr | null; close: { name: string; node: ts.Expression }[] } = {
+    signal: null,
+    close: [],
+  };
+  if (!ts.isObjectLiteralExpression(node)) {
+    lowerer.noLowering(
+      "events.on options that are not an object literal",
+      node,
+      "pass the options as an object literal: { signal, close }",
+    );
+    return result;
+  }
+  let sawClose = false;
+  for (const prop of node.properties.nodes) {
+    const name = prop.name && ts.isIdentifier(prop.name) ? prop.name.text : null;
+    const simple = ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop);
+    if (name === "signal" && result.signal === null && simple) {
+      result.signal = lowerer.lowerExprExpecting(
+        ts.isPropertyAssignment(prop) ? prop.initializer : (prop.name as ts.Identifier),
+        DYN,
+      );
+    } else if (
+      name === "close" &&
+      !sawClose &&
+      ts.isPropertyAssignment(prop) &&
+      ts.isArrayLiteralExpression(prop.initializer)
+    ) {
+      sawClose = true;
+      for (const element of prop.initializer.elements.nodes) {
+        const event = ts.isSpreadElement(element) ? null : literalEventName(lowerer, element);
+        if (event === null || META_EVENTS.has(event) || event === ERROR_MONITOR_EVENT) {
+          lowerer.noLowering(
+            "events.on close events that are not string literals",
+            element,
+            "list the close events as string literals: close: ['end']",
+          );
+        } else {
+          result.close.push({ name: event, node: element });
+        }
+      }
+    } else {
+      lowerer.noLowering(
+        "events.on options other than signal and close",
+        prop,
+        "the lowered options object takes signal: AbortSignal and close: string[]",
+      );
+    }
+  }
+  return result;
+}
+
+/** events.on(emitter, name[, { signal, close }]) consumed by a for-await
+ * loop: the events.onOpen call and the close events. The emitter and the
+ * event follow events.once's rules (an EventEmitter or stream instance, a
+ * literal event name, a stream's 'data' and 'keypress' events refused). */
+export function eventsOnPlan(lowerer: Lowerer, call: ts.CallExpression, loc: SrcLoc): EventsOnPlan {
+  const args = call.arguments.nodes;
+  if (args.length < 2 || args.length > 3 || args.some(ts.isSpreadElement)) {
+    lowerer.noLowering("events.on without an emitter, an event name and options", call);
+  }
+  const arrayT = arrayOf(DYN);
+  const receiver = lowerer.lowerExpr(args[0]!);
+  const info =
+    receiver.type.kind === "object" ? lowerer.classes.get(receiver.type.className) : undefined;
+  if (!emitterRooted(lowerer, info)) {
+    requestGeneralStreamSurface(lowerer, args[0]!);
+    lowerer.noLowering(
+      "events.on over this value",
+      args[0]!,
+      "the emitter must be an EventEmitter or stream instance; EventTarget receivers are not supported yet",
+    );
+  }
+  const name = literalEventName(lowerer, args[1]!);
+  if (name === null || META_EVENTS.has(name) || name === ERROR_MONITOR_EVENT) {
+    lowerer.noLowering(
+      "events.on with a computed or meta event name",
+      args[1]!,
+      "name the iterated event with a string literal",
+    );
+  }
+  const event = name ?? "";
+  const sides = streamSidesOf(lowerer, info);
+  const streamData = (e: string) =>
+    (sides === "r" || sides === "rw") && (e === "data" || e === "keypress");
+  if (streamData(event)) {
+    lowerer.noLowering(
+      `events.on of a stream's '${event}' event`,
+      args[1]!,
+      "the chunk has no checked-dynamic boxing here; iterate the stream itself: for await (const chunk of stream)",
+    );
+  }
+  const table = emitterEvents(lowerer);
+  const tupleFor = (e: string, node: ts.Expression): IrType[] => {
+    if (e !== "error" && flexibleJsEvent(e, table.get(e))) {
+      lowerer.noLowering(
+        `events.on of the event '${e}', which is emitted with computed names or checked-dynamic listeners`,
+        node,
+      );
+    }
+    return streamForcedTuple(lowerer, info, e) ?? tupleOf(lowerer, table, e, call);
+  };
+  const tuple = tupleFor(event, args[1]!);
+  const errorTuple: IrType[] = [{ kind: "object", className: "%Error" }];
+  const boxer = eventsOnceBoxer(lowerer, call, tuple, arrayT, loc);
+  const errorBoxer = eventsOnceBoxer(lowerer, call, errorTuple, arrayT, loc);
+  const options =
+    args.length > 2 ? eventsOnOptions(lowerer, args[2]!) : { signal: null, close: [] };
+  const closes = options.close.map(({ name: closeName, node }) => {
+    if (streamData(closeName)) {
+      lowerer.noLowering(`events.on closing on a stream's '${closeName}' event`, node);
+    }
+    return {
+      name: closeName,
+      boxer: eventsOnceBoxer(lowerer, call, tupleFor(closeName, node), arrayT, loc),
+    };
+  });
+  return {
+    open: {
+      kind: "libCall",
+      fn: "events.onOpen",
+      args: [
+        receiver,
+        eventNameExpr(event, loc),
+        boxer,
+        errorBoxer,
+        boolLit(event !== "error", loc),
+        options.signal ?? dynUndefinedExpr(loc),
+      ],
+      type: F64,
+      loc,
+    },
+    closes,
+    signalled: options.signal !== null,
   };
 }
 

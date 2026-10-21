@@ -4174,6 +4174,21 @@ function validateFunction(
       }
       return true;
     }
+    if (e.fn === "events.onOpen" || e.fn === "events.onClose") {
+      const open = e.fn === "events.onOpen";
+      const boxers = open ? [e.args[2], e.args[3]] : [e.args[2]];
+      const boxes = (b: IrExpr | undefined) =>
+        b?.type.kind === "func" && typeEquals(b.type.ret, arrayOf(DYN));
+      if ((open && e.args[0]?.type.kind !== "object") || !boxers.every(boxes)) {
+        err(
+          `libCall ${e.fn} must box its event tuples into arrays of checked-dynamic values`,
+          e.loc,
+        );
+      }
+      if (!typeEquals(e.type, open ? F64 : VOID))
+        err(`libCall ${e.fn} has the wrong result type`, e.loc);
+      return true;
+    }
     if (
       e.fn === "tp.setTimeoutValue" ||
       e.fn === "tp.setImmediateValue" ||
@@ -5798,7 +5813,9 @@ function validateFunction(
       e.fn !== "emitter.esmDefaultMax" &&
       e.fn !== "emitter.esmSync" &&
       e.fn !== "emitter.errorMonitor" &&
-      e.fn !== "emitter.checkListener"
+      e.fn !== "emitter.checkListener" &&
+      e.fn !== "emitter.captureDefault" &&
+      e.fn !== "emitter.setCaptureDefault"
     ) {
       // Receiver: an emitter-hierarchy object (the %EventEmitter class
       // itself, or a class whose base chain reaches it). emitter.new
@@ -5812,9 +5829,9 @@ function validateFunction(
         }
         return false;
       };
-      if (e.fn === "emitter.new") {
+      if (e.fn === "emitter.new" || e.fn === "emitter.newOptions") {
         if (e.type.kind !== "object" || e.type.className !== RUNTIME_EMITTER_CLASS) {
-          err(`libCall emitter.new must return '%EventEmitter', got ${e.type.kind}`, e.loc);
+          err(`libCall ${e.fn} must return '%EventEmitter', got ${e.type.kind}`, e.loc);
         }
         return true;
       }
@@ -5827,6 +5844,7 @@ function validateFunction(
         e.fn === "emitter.on" ||
         e.fn === "emitter.off" ||
         e.fn === "emitter.onDyn" ||
+        e.fn === "emitter.onWrapped" ||
         e.fn === "emitter.onFlex" ||
         e.fn === "stream.onDyn" ||
         e.fn === "emitter.offDyn" ||
@@ -5848,7 +5866,9 @@ function validateFunction(
           err(`libCall ${e.fn} listener must be a func`, e.loc);
         }
         if (
-          (e.fn === "emitter.onDyn" || e.fn === "emitter.onDataDyn") &&
+          (e.fn === "emitter.onDyn" ||
+            e.fn === "emitter.onDataDyn" ||
+            e.fn === "emitter.onWrapped") &&
           e.args[3]?.type.kind !== "func"
         ) {
           err(`libCall ${e.fn} adapter must be a func`, e.loc);

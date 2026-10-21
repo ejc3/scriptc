@@ -3727,6 +3727,22 @@ export const LIB_FN_SIGS = defineLibFnSignatures({
    * EventEmitter's hierarchy): the +1 class name the instance records. */
   "emitter.className": { argTypes: [null], result: STRING },
   "emitter.ctor": { argTypes: [null], result: VOID },
+  /** captureRejections (Node's kCapture): `new EventEmitter(options)` and
+   * super(options) take the checked-dynamic options object; the default
+   * is EventEmitter.captureRejections; capturing reads a receiver's flag;
+   * rejected hands a listener promise's rejection (emitter, its checked-
+   * dynamic view, the reason, the event, the event's arguments) to the
+   * next-tick handling (scr_events_capture.c). */
+  "emitter.newOptions": { argTypes: [DYN], result: VOID },
+  "emitter.ctorOptions": { argTypes: [null, DYN], result: VOID },
+  "emitter.captureDefault": { argTypes: [], result: BOOL },
+  "emitter.setCaptureDefault": { argTypes: [DYN], result: VOID },
+  "emitter.capturing": { argTypes: [null], result: BOOL },
+  "emitter.rejected": { argTypes: [null, DYN, DYN, DYN, STRING, arrayOf(DYN)], result: VOID },
+  /** (recv, name, cb /moves — the identity/, wrapper /moves/, once,
+   * prepend): a promise-returning listener behind its capture wrapper,
+   * which emit invokes; removal still finds the listener itself. */
+  "emitter.onWrapped": { argTypes: [null, STRING, null, null, BOOL, BOOL], result: VOID },
   "emitter.on": { argTypes: [null, STRING, null, BOOL, BOOL], result: VOID },
   "emitter.off": { argTypes: [null, STRING, null], result: VOID },
   // The dyn-adapted registration family (JS-lane checked-dynamic
@@ -4357,6 +4373,21 @@ export const LIB_FN_SIGS = defineLibFnSignatures({
    * events.once's arguments plus the checked-dynamic signal (an
    * AbortSignal or undefined). */
   "events.onceSignal": { argTypes: [null, STRING, null, null, BOOL, DYN], result: VOID },
+  /** events.on(emitter, name[, { signal, close }]) consumed by a for-await
+   * loop (scr_events_on.c): [emitter, name, boxer, errorBoxer,
+   * listenForError, signal] → the iterator's handle. The boxers turn the
+   * event's and the 'error' tuple into the arrays next() delivers. */
+  "events.onOpen": { argTypes: [null, STRING, null, null, BOOL, DYN], result: F64 },
+  /** [handle, name, boxer]: the listener of one `close` event. */
+  "events.onClose": { argTypes: [F64, STRING, null], result: VOID },
+  /** [handle]: the signal's abort listener, after the emitter's. */
+  "events.onArm": { argTypes: [F64], result: VOID },
+  /** [handle] → next(): the next event's arguments, or [] when done. */
+  "events.onNext": { argTypes: [F64], result: { kind: "promise", inner: arrayOf(DYN) } },
+  /** [handle] → whether the result just awaited was done. */
+  "events.onDone": { argTypes: [F64], result: BOOL },
+  /** [handle] → return(): the done result's promise, which the loop awaits. */
+  "events.onReturn": { argTypes: [F64], result: { kind: "promise", inner: arrayOf(DYN) } },
   /** The resolve-value forms: [ms?, value, ref] → a pending promise of the
    * value's type that copies the borrowed already-resolved `value` promise
    * when the timer (or immediate) fires; ref false unrefs it. The result

@@ -444,6 +444,7 @@ import { lowerBufferStaticCall, lowerBytesMethodCall, lowerBytesNew } from "./co
 import { lowerRegexMethodCall, lowerStringMethodCall } from "./containers/string-and-regexp.js";
 import {
   lowerEmitOverrideSpec,
+  lowerEventsCaptureMember,
   type ComputedEventPattern,
   type EmitSpecCtx,
   type EmitSpecRequest,
@@ -1809,6 +1810,13 @@ function monomorphizedImplicit(
   return true;
 }
 
+/** EventEmitter statics that are also events module properties. */
+const EVENTS_CLASS_STATICS: ReadonlySet<string> = new Set([
+  "defaultMaxListeners",
+  "captureRejections",
+  "captureRejectionSymbol",
+]);
+
 export class Lowerer {
   readonly frontendServices: FrontendServices | undefined;
   readonly checker: ts.TypeChecker;
@@ -2095,6 +2103,9 @@ export class Lowerer {
   /** Lambdas lowered with checked-dynamic parameters (lambdaSignature):
    * callbacks whose arguments are wider than their contextual overload. */
   readonly dynParamLambdas = new Set<ts.Node>();
+  /** Whether some source names captureRejections, so an emitter may
+   * capture its async listeners' rejections. Null until first asked. */
+  eventsCaptureReachable: boolean | null = null;
   /** Whether some server in this program may listen on a Unix socket: a
    * listen call whose first argument is a string. Computed once on first
    * use (null until then); address() answers the path only when true. */
@@ -2114,6 +2125,9 @@ export class Lowerer {
    * their symbol/node keys; no module-level cache should retain a pass. */
   readonly classSymbolKeys = new Map<ts.Symbol, ClassSymbolKey | null>();
   readonly registeredClassSymbols = new Map<string, ts.Symbol>();
+  /** Class symbol keys that are builtin module values rather than program
+   * bindings (events.captureRejectionSymbol): no global holds them. */
+  readonly builtinClassSymbols = new Set<ts.Symbol>();
   /** Symbol-key identities by description, in resolution order (the slot
    * ordinals of key-table keys — symbolKeyOf). */
   readonly symbolFieldIdentities = new Map<string, ts.Symbol[]>();
@@ -12825,11 +12839,11 @@ export class Lowerer {
     if (module === "constants") return null;
     if (module !== null) return { module, member: access.name.text };
     // The events module object IS the EventEmitter class, so the class's
-    // defaultMaxListeners is the module property.
-    if (access.name.text === "defaultMaxListeners" && ts.isIdentifier(access.expression)) {
+    // defaultMaxListeners and capture statics are the module properties.
+    if (EVENTS_CLASS_STATICS.has(access.name.text) && ts.isIdentifier(access.expression)) {
       const imported = this.builtinImportOf(access.expression);
       if (imported?.module === "events" && imported.member === "EventEmitter") {
-        return { module: "events", member: "defaultMaxListeners" };
+        return { module: "events", member: access.name.text };
       }
     }
     // The RE-EXPORT FACADE's namespace spelling: `import * as assert from
@@ -12906,6 +12920,24 @@ export class Lowerer {
     if (bi.module === "worker_threads") {
       const value = lowerWorkerMetadata(bi.member, loc);
       if (value) return value;
+    }
+    if (bi.module === "events" && bi.member === "captureRejections") {
+      // An ES module namespace holds a copy taken at load, which only
+      // syncBuiltinESMExports refreshes.
+      if (
+        ts.isIdentifier(expr.expression) &&
+        esmImportBindingKind(this, expr.expression) === "namespace"
+      ) {
+        this.noLowering(
+          "events.captureRejections through an ES module namespace",
+          expr,
+          "read EventEmitter.captureRejections where the current default is needed",
+        );
+      }
+    }
+    if (bi.module === "events") {
+      const capture = lowerEventsCaptureMember(bi.member, loc);
+      if (capture) return capture;
     }
     const c = builtinModuleConstOf(this, bi.module, bi.member);
     if (c !== undefined) return builtinConstLit(c, loc);

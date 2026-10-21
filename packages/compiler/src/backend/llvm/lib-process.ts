@@ -764,6 +764,70 @@ export function emitErrorsEventsLibCall(host: LlvmEmitterContext, e: LibCallExpr
     host.emitPendingCheck();
     return out;
   }
+  if (e.fn === "events.onOpen") {
+    // (recv, name, boxer, errorBoxer, listenForError, signal) → the
+    // iterator's handle (scr_events_on.c): the event's and 'error' listeners
+    // register behind adapters that box their tuples, as events.once's do,
+    // and end in scr_events_on_fire. May-throw: a signal that is not an
+    // AbortSignal, an aborted signal, 'newListener' meta listeners.
+    const boxerT = e.args[2]!.type;
+    const errorT = e.args[3]!.type;
+    if (boxerT.kind !== "func" || errorT.kind !== "func")
+      throw new InternalCompilerError("llvm emitter bug: events.onOpen boxer not a func");
+    const args = e.args.map((a) => host.emitExpr(a));
+    const event = host.emitterOnceAdapter(boxerT, "scr_events_on_fire");
+    const error = host.emitterOnceAdapter(errorT, "scr_events_on_fire");
+    host.declare(`declare double @scr_events_on_open(ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr, ptr)`);
+    const errorBoxer = B.tmp();
+    B.line(`${errorBoxer} = select i1 ${args[4]!.name}, ptr ${args[3]!.name}, ptr null`);
+    const t = B.tmp();
+    B.line(
+      `${t} = call double @scr_events_on_open(ptr ${args[0]!.name}, ptr ${args[1]!.name}, ` +
+        `ptr ${args[2]!.name}, ptr @${event.fn}, ptr @${event.shim}, ` +
+        `ptr ${errorBoxer}, ptr @${error.fn}, ptr @${error.shim}, ptr ${args[5]!.name})`,
+    );
+    host.emitPendingCheck();
+    return { name: t, type: e.type };
+  }
+  if (e.fn === "events.onClose") {
+    // (handle, name, boxer): one close event's listener. May-throw
+    // ('newListener' meta listeners).
+    const boxerT = e.args[2]!.type;
+    if (boxerT.kind !== "func")
+      throw new InternalCompilerError("llvm emitter bug: events.onClose boxer not a func");
+    const args = e.args.map((a) => host.emitExpr(a));
+    const close = host.emitterOnceAdapter(boxerT, "scr_events_on_fire");
+    host.declare(`declare void @scr_events_on_close(double, ptr, ptr, ptr, ptr)`);
+    B.line(
+      `call void @scr_events_on_close(double ${args[0]!.name}, ptr ${args[1]!.name}, ` +
+        `ptr ${args[2]!.name}, ptr @${close.fn}, ptr @${close.shim})`,
+    );
+    host.emitPendingCheck();
+    return { name: "", type: e.type };
+  }
+  if (e.fn === "events.onArm") {
+    const [h] = e.args.map((a) => host.emitExpr(a));
+    host.declare(`declare void @scr_events_on_arm(double)`);
+    B.line(`call void @scr_events_on_arm(double ${h!.name})`);
+    return { name: "", type: e.type };
+  }
+  if (e.fn === "events.onNext" || e.fn === "events.onReturn") {
+    // The iterator's next() and return(): +1 promises. return() runs the
+    // close handler, whose 'removeListener' meta listeners may throw.
+    const [h] = e.args.map((a) => host.emitExpr(a));
+    const entry = e.fn === "events.onNext" ? "scr_events_on_next" : "scr_events_on_return";
+    host.declare(`declare ptr @${entry}(double)`);
+    const t = B.tmp();
+    B.line(`${t} = call ptr @${entry}(double ${h!.name})`);
+    return host.own({ name: t, type: e.type });
+  }
+  if (e.fn === "events.onDone") {
+    const [h] = e.args.map((a) => host.emitExpr(a));
+    host.declare(`declare zeroext i1 @scr_events_on_done(double)`);
+    const t = B.tmp();
+    B.line(`${t} = call zeroext i1 @scr_events_on_done(double ${h!.name})`);
+    return { name: t, type: e.type };
+  }
   if (e.fn === "emitter.on") {
     // (recv, name, cb /moves — the identity/, once, prepend): the
     // listener registers through scr_emitter_on_via with an emitted
@@ -789,6 +853,31 @@ export function emitErrorsEventsLibCall(host: LlvmEmitterContext, e: LibCallExpr
     B.line(
       `${t} = call ptr @scr_emitter_on_via(ptr ${args[0]!.name}, ptr ${args[1]!.name}, ` +
         `ptr ${args[2]!.name}, ptr ${wrapped}, ptr @${shim}, i1 ${args[3]!.name}, i1 ${args[4]!.name})`,
+    );
+    const out = host.own({ name: t, type: e.type });
+    host.emitPendingCheck();
+    return out;
+  }
+  if (e.fn === "emitter.onWrapped") {
+    // (recv, name, cb /moves — the identity/, wrapper /moves/, once,
+    // prepend): the capture wrapper rides behind the fixed-arity adapter
+    // that emit invokes; the listener itself is the entry's identity, so
+    // removal and listeners() see it. May-throw ('newListener').
+    const wT = e.args[3]!.type;
+    if (wT.kind !== "func")
+      throw new InternalCompilerError("llvm emitter bug: emitter.onWrapped wrapper not a func");
+    const args = e.args.map((a) => host.emitExpr(a));
+    const { fn: adapterFn, shim } = host.emitterFixedAdapter(wT);
+    host.toHeap(args[2]!); // the identity moves into the entry
+    host.toHeap(args[3]!); // the wrapper moves into the adapter's box
+    const wrapped = host.wrapEmitterListener(args[3]!.name, adapterFn);
+    host.declare(
+      `declare ptr @scr_emitter_on_via(ptr, ptr, ptr, ptr, ptr, i1 zeroext, i1 zeroext)`,
+    );
+    const t = B.tmp();
+    B.line(
+      `${t} = call ptr @scr_emitter_on_via(ptr ${args[0]!.name}, ptr ${args[1]!.name}, ` +
+        `ptr ${args[2]!.name}, ptr ${wrapped}, ptr @${shim}, i1 ${args[4]!.name}, i1 ${args[5]!.name})`,
     );
     const out = host.own({ name: t, type: e.type });
     host.emitPendingCheck();

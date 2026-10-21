@@ -227,6 +227,10 @@ const RUNTIME_UNITS: readonly RuntimeUnit[] = [
   // events.once with options registers through the emitter and
   // event-target units.
   unit((u) => u.opts.eventsOnceSignal === true, "scr_events_once_signal.c"),
+  // events.on iterates through the emitter and event-target units.
+  unit((u) => u.opts.eventsOn === true, "scr_events_on.c"),
+  // captureRejections calls through the symbol and checked-dynamic units.
+  unit((u) => u.opts.eventsCapture === true, "scr_events_capture.c"),
   // The checked-dynamic HANDLE support unit (listener gate + runtime
   // adapter closures): every referencing unit is one of the emitter or
   // net families (http implies net), so handle-free binaries keep

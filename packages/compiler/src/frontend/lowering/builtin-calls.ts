@@ -105,6 +105,13 @@ export function lowerBuiltinCall(
     return lowerAddAbortListener(lowerer, expr, loc);
   }
   if (bi.module === "events" && bi.member === "once") return lowerEventsOnce(lowerer, expr, loc);
+  if (bi.module === "events" && bi.member === "on") {
+    lowerer.noLowering(
+      "events.on outside a for-await loop",
+      expr,
+      "iterate it directly: for await (const args of on(emitter, name)) { ... }",
+    );
+  }
   if (bi.module === "perf_hooks" && bi.member === "monitorEventLoopDelay") {
     return lowerMonitorEventLoopDelayCall(lowerer, expr);
   }

@@ -151,6 +151,7 @@ const LEGACY_TEXT_DECODER_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
 
 /** Signal-taking readline, stream and timers/promises entry points, which register abort listeners. */
 const ABORT_SIGNAL_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
+  "events.onOpen",
   "events.onceSignal",
   "http.clientSignal",
   "http.requestDyn",
@@ -288,6 +289,8 @@ const BUILTIN_CLASS_LIB_FNS: readonly IrLibFn[] = [
 const SYMBOL_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   // EventEmitter's kShapeMode and kCapture properties
   ...BUILTIN_CLASS_LIB_FNS,
+  // captureRejections looks up Symbol.for('nodejs.rejection')
+  "emitter.rejected",
   "dyn.usingDispose",
   "dyn.usingMethod",
   "util.isDeepStrictEqual",
@@ -623,6 +626,10 @@ const RUNTIME_FEATURE_RULES = {
   }),
   /** events.once(emitter, name, { signal }) (scr_events_once_signal.c). */
   eventsOnceSignal: rule({ fns: ["events.onceSignal"] }),
+  /** events.on in for-await loops (scr_events_on.c). */
+  eventsOn: rule({ fns: ["events.onOpen"] }),
+  /** captureRejections over promise-returning listeners (scr_events_capture.c). */
+  eventsCapture: rule({ fns: ["emitter.rejected"] }),
   fetch: rule({ prefixes: ["fetch."] }),
   fileHandle: rule({ types: ["fileHandle"] }),
   fsWatch: rule({ prefixes: ["fs.watch", "watcher."], types: ["fsWatcher"] }),
@@ -766,6 +773,8 @@ function noRuntimeFeatures(): RuntimeFeatures {
     emitter: false,
     eventTarget: false,
     eventsOnceSignal: false,
+    eventsOn: false,
+    eventsCapture: false,
     fetch: false,
     fileHandle: false,
     fsWatch: false,

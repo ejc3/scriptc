@@ -6,7 +6,7 @@ import {
   isModuleExportsAccess,
 } from "../program.js";
 import type { Lowerer } from "./lowerer.js";
-import type { IrType } from "../../ir/ir.js";
+import { type IrExpr, type IrType, type SrcLoc, STRING, SYMBOL_T } from "../../ir/ir.js";
 
 export interface ClassSymbolKey {
   sym: ts.Symbol;
@@ -41,6 +41,23 @@ function constantSymbolDescription(
   )
     return null;
   return constantSymbolDescription(lowerer, declaration.initializer, seen);
+}
+
+/** The key value of a builtin class symbol key (lowerer.builtinClassSymbols),
+ * or null for keys a program binding holds. */
+export function builtinClassSymbolKey(
+  lowerer: Lowerer,
+  symbol: ts.Symbol,
+  loc: SrcLoc,
+): IrExpr | null {
+  if (!lowerer.builtinClassSymbols.has(symbol)) return null;
+  return {
+    kind: "libCall",
+    fn: "sym.for",
+    args: [{ kind: "strLit", value: "nodejs.rejection", type: STRING, loc }],
+    type: SYMBOL_T,
+    loc,
+  };
 }
 
 export function symbolFieldDisplayName(field: string): string {
@@ -87,7 +104,21 @@ export function classSymbolKeyOf(lowerer: Lowerer, key: ts.Expression): ClassSym
   const id = ts.isPropertyAccessExpression(key) ? key.name : key;
   if (!ts.isIdentifier(id)) return null;
   const sym = lowerer.resolveValueSymbol(id);
-  return sym ? classSymbolKeyOfSymbol(lowerer, sym) : null;
+  if (!sym) return null;
+  // events.captureRejectionSymbol, in any spelling, is the registry's
+  // Symbol.for('nodejs.rejection').
+  const builtin = ts.isIdentifier(key)
+    ? lowerer.builtinImportOf(key)
+    : lowerer.builtinMemberOf(key as ts.PropertyAccessExpression);
+  if (builtin?.module === "events" && builtin.member === "captureRejectionSymbol") {
+    const cached = lowerer.classSymbolKeys.get(sym);
+    if (cached) return cached;
+    const registered = symbolKeyOf(lowerer, sym, true, "nodejs.rejection");
+    lowerer.classSymbolKeys.set(sym, registered);
+    lowerer.builtinClassSymbols.add(sym);
+    return registered;
+  }
+  return classSymbolKeyOfSymbol(lowerer, sym);
 }
 
 /** A literal Symbol()/Symbol.for() initialized once at module scope. The

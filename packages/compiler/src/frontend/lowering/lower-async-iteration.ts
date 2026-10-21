@@ -26,6 +26,8 @@ import { staticReadableStreamElementType } from "./lower-stdlib.js";
 import { genResultRecord } from "../type-mapper.js";
 import { sideEffectFreeOptionValue } from "./surfaces.js";
 import { isReadlineTyped } from "./builtins/readline.js";
+import { eventsOnPlan } from "./lower-event-emitter.js";
+import { arrayOf } from "../../ir/ir.js";
 
 interface NodeReadablePlan {
   source: ts.Expression;
@@ -1150,11 +1152,225 @@ function lowerReadlineLines(
   }
 }
 
+/** The events.on(...) call a for-await loop iterates directly: `on` from
+ * the events module, `events.on`, or the EventEmitter class's static. */
+function eventsOnCall(lowerer: Lowerer, expression: ts.Expression): ts.CallExpression | null {
+  const call = unwrapExpression(expression);
+  if (!ts.isCallExpression(call)) return null;
+  const callee = call.expression;
+  const builtin = ts.isIdentifier(callee)
+    ? lowerer.builtinImportOf(callee)
+    : ts.isPropertyAccessExpression(callee)
+      ? lowerer.builtinMemberOf(callee)
+      : null;
+  if (builtin?.module === "events" && builtin.member === "on") return call;
+  if (
+    !ts.isPropertyAccessExpression(callee) ||
+    callee.name.text !== "on" ||
+    lowerer.checker.getConstructSignatures(lowerer.typeOf(callee.expression)).length === 0
+  )
+    return null;
+  const owner = ts.isIdentifier(callee.expression)
+    ? lowerer.builtinImportOf(callee.expression)
+    : ts.isPropertyAccessExpression(callee.expression)
+      ? lowerer.builtinMemberOf(callee.expression)
+      : null;
+  return owner?.module === "events" ? call : null;
+}
+
+/** for await (const args of events.on(emitter, name, options)): Node's
+ * events.on iterator (scr_events_on.c), driven through a handle. Each
+ * iteration awaits next() and binds the event's arguments, an array of
+ * checked-dynamic values, to the loop's identifier or pattern. A done
+ * result ends the loop; an 'error' event or the signal's abort rejects
+ * next(), which throws out of the loop; an abrupt completion while the body
+ * owns a value awaits return(), which stops listening. */
+function lowerEventsOnLoop(
+  lowerer: Lowerer,
+  stmt: ts.ForOfStatement,
+  call: ts.CallExpression,
+): IrStmt {
+  if (!lowerer.ctx.isAsync) {
+    lowerer.unsupported("SC1090", stmt, "top-level 'for await' (await outside async functions)");
+  }
+  const list = stmt.initializer;
+  if (!ts.isVariableDeclarationList(list)) {
+    lowerer.unsupported(
+      "SC1090",
+      list,
+      "for-await over a pre-declared variable (declare the loop variable in the loop: for await (const args of ...))",
+    );
+  }
+  const isLet = (list.flags & ts.NodeFlags.Let) !== 0;
+  if ((list.flags & ts.NodeFlags.Using) !== 0) {
+    lowerer.unsupported("SC1090", list, "'await using' loop bindings over async iterators");
+  }
+  if ((list.flags & ts.NodeFlags.Const) === 0 && !isLet) {
+    lowerer.unsupported("SC1030", list, "'var' loop bindings in 'for await' (use const)");
+  }
+  const declaration = list.declarations.nodes[0];
+  if (!declaration) throw new InternalCompilerError("for-await declaration list has no binding");
+  const loc = locOf(stmt);
+  const arrayT = arrayOf(DYN);
+  const promiseT: IrType = { kind: "promise", inner: arrayT };
+  lowerer.scopes.push(new Map());
+  try {
+    const plan = eventsOnPlan(lowerer, call, locOf(call));
+    const handle = lowerer.declareHiddenLocal("%eoHandle", F64);
+    const active = lowerer.declareHiddenLocal("%eoActive", BOOL);
+    active.mutable = true;
+    const next = lowerer.declareHiddenLocal("%eoNext", promiseT);
+    const value = lowerer.declareHiddenLocal("%eoValue", arrayT);
+    const closing = lowerer.declareHiddenLocal("%eoReturn", promiseT);
+    const closed = lowerer.declareHiddenLocal("%eoReturned", arrayT);
+    const handleRef = (): IrExpr => ({ kind: "varRef", localId: handle.id, type: F64, loc });
+    const valueRef = (): IrExpr => ({ kind: "varRef", localId: value.id, type: arrayT, loc });
+    const bind: IrStmt[] = [];
+    if (ts.isIdentifier(declaration.name)) {
+      const local = lowerer.declareLocal(declaration.name, declaration.name.text, arrayT, isLet);
+      bind.push({ kind: "varDecl", localId: local.id, init: valueRef(), loc });
+    } else if (
+      ts.isArrayBindingPattern(declaration.name) ||
+      ts.isObjectBindingPattern(declaration.name)
+    ) {
+      lowerer.lowerBindingPattern(declaration.name, valueRef, arrayT, isLet, bind);
+    } else {
+      lowerer.unsupported("SC1031", declaration.name);
+    }
+    const body = lowerer.inCtl("loop", () => lowerer.lowerScopedBlock(stmt.statement));
+    const setActive = (on: boolean): IrStmt => ({
+      kind: "assign",
+      localId: active.id,
+      value: { kind: "boolLit", value: on, type: BOOL, loc },
+      loc,
+    });
+    const loop: IrStmt = {
+      kind: "while",
+      cond: { kind: "boolLit", value: true, type: BOOL, loc },
+      body: [
+        setActive(false),
+        {
+          kind: "varDecl",
+          localId: next.id,
+          init: { kind: "libCall", fn: "events.onNext", args: [handleRef()], type: promiseT, loc },
+          loc,
+        },
+        {
+          kind: "varDecl",
+          localId: value.id,
+          init: {
+            kind: "awaitExpr",
+            value: { kind: "varRef", localId: next.id, type: promiseT, loc },
+            type: arrayT,
+            loc,
+          },
+          loc,
+        },
+        {
+          kind: "if",
+          cond: { kind: "libCall", fn: "events.onDone", args: [handleRef()], type: BOOL, loc },
+          then: [{ kind: "break", loc }],
+          else_: null,
+          loc,
+        },
+        ...bind,
+        setActive(true),
+        ...body,
+      ],
+      loc,
+    };
+    const setup: IrStmt[] = [
+      { kind: "varDecl", localId: handle.id, init: plan.open, loc },
+      ...plan.closes.map((close): IrStmt => ({
+        kind: "exprStmt",
+        expr: {
+          kind: "libCall",
+          fn: "events.onClose",
+          args: [
+            handleRef(),
+            { kind: "strLit", value: close.name, type: STRING, loc },
+            close.boxer,
+          ],
+          type: VOID,
+          loc,
+        },
+        loc,
+      })),
+      ...(plan.signalled
+        ? [
+            {
+              kind: "exprStmt",
+              expr: { kind: "libCall", fn: "events.onArm", args: [handleRef()], type: VOID, loc },
+              loc,
+            } as IrStmt,
+          ]
+        : []),
+    ];
+    return {
+      kind: "block",
+      body: [
+        ...setup,
+        {
+          kind: "varDecl",
+          localId: active.id,
+          init: { kind: "boolLit", value: false, type: BOOL, loc },
+          loc,
+        },
+        {
+          kind: "tryCatch",
+          tryBody: [loop],
+          catchBody: null,
+          catchLocalId: null,
+          finallyBody: [
+            {
+              kind: "if",
+              cond: boolRef(active.id, loc),
+              then: [
+                {
+                  kind: "varDecl",
+                  localId: closing.id,
+                  init: {
+                    kind: "libCall",
+                    fn: "events.onReturn",
+                    args: [handleRef()],
+                    type: promiseT,
+                    loc,
+                  },
+                  loc,
+                },
+                {
+                  kind: "varDecl",
+                  localId: closed.id,
+                  init: {
+                    kind: "awaitExpr",
+                    value: { kind: "varRef", localId: closing.id, type: promiseT, loc },
+                    type: arrayT,
+                    loc,
+                  },
+                  loc,
+                },
+              ],
+              else_: null,
+              loc,
+            },
+          ],
+          loc,
+        },
+      ],
+      loc,
+    };
+  } finally {
+    lowerer.scopes.pop();
+  }
+}
+
 export function lowerForAwaitBuiltin(lowerer: Lowerer, stmt: ts.ForOfStatement): IrStmt | null {
   if (lowerer.mapTypeOf(lowerer.typeOf(stmt.expression))?.kind === "dir")
     return lowerDirEntries(lowerer, stmt);
   const readline = readlinePlan(lowerer, stmt.expression);
   if (readline) return lowerReadlineLines(lowerer, stmt, readline);
+  const eventsOn = eventsOnCall(lowerer, stmt.expression);
+  if (eventsOn) return lowerEventsOnLoop(lowerer, stmt, eventsOn);
   const node = nodeReadablePlan(lowerer, stmt.expression);
   if (node) return lowerNodeReadable(lowerer, stmt, node);
   const web = webReadablePlan(lowerer, stmt.expression);

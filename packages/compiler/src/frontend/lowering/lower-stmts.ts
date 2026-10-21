@@ -7493,6 +7493,28 @@ export function lowerExprStatement(lowerer: Lowerer, expr: ts.Expression): IrStm
         // module-property write Node validates (the lowerBinary
         // expression twin): the value crosses into the checked-dynamic tree, the runtime
         // ladder throws Node's exact errors, valid numbers apply.
+        if (!expr.left.questionDotToken && expr.left.name.text === "captureRejections") {
+          const bi = lowerer.builtinMemberOf(expr.left);
+          if (bi && bi.module === "events" && bi.member === "captureRejections") {
+            const loc = locOf(expr);
+            const rhs = lowerer.lowerExpr(expr.right);
+            if (rhs.type.kind === "dyn" || lowerer.dynConvertible(rhs.type)) {
+              const dynVal: IrExpr =
+                rhs.type.kind === "dyn" ? rhs : { kind: "dynFrom", value: rhs, type: DYN, loc };
+              return {
+                kind: "exprStmt",
+                expr: {
+                  kind: "libCall",
+                  fn: "emitter.setCaptureDefault",
+                  args: [dynVal],
+                  type: VOID,
+                  loc,
+                },
+                loc,
+              };
+            }
+          }
+        }
         if (!expr.left.questionDotToken && expr.left.name.text === "defaultMaxListeners") {
           const bi = lowerer.builtinMemberOf(expr.left);
           if (bi && bi.module === "events" && bi.member === "defaultMaxListeners") {

@@ -25,6 +25,7 @@ import {
 import type { Lowerer } from "./lowerer.js";
 import { PoisonError, newFnCtx } from "./lowerer.js";
 import { classMethodValue } from "./class-method-values.js";
+import { builtinClassSymbolKey } from "./symbol-fields.js";
 
 /** Data added to a top-level class prototype has shared identity and remains
  * separate from instance fields. Allocate lazily so inheritance and module
@@ -596,6 +597,11 @@ function prototypeProtectedKeys(
       } else if (name.startsWith("%symbol:")) {
         const entries: [ts.Symbol, string][] = owner.symbolMethods ? [...owner.symbolMethods] : [];
         const entry = entries.find(([, field]) => field === name);
+        const builtin = entry ? builtinClassSymbolKey(lowerer, entry[0], loc) : null;
+        if (builtin) {
+          keys.push(builtin);
+          continue;
+        }
         const declaration = entry ? entry[0].valueDeclaration : undefined;
         // A CommonJS key-table property holds its key in the table's global.
         const tableKey =

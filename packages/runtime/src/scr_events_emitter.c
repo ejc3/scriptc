@@ -102,6 +102,10 @@ struct ScrEeReg {
    * emitter. The owner keeps the borrowed context alive with the emitter. */
   void (*observe)(void *context, const ScrStr *name, bool present);
   void *observer_context;
+  /* Node's kCapture: a listener's rejected promise reaches the emitter's
+   * Symbol.for('nodejs.rejection') method or its 'error' event
+   * (scr_events_capture.c). */
+  bool capture;
 };
 
 /* The vtable of BARE `new EventEmitter()` instances; the emitted main()
@@ -310,6 +314,53 @@ static void scr_emitter_release_direct(void *obj) {
   }
 }
 
+/* EventEmitter.captureRejections: the capture flag new emitters take. */
+static SCR_TL bool scr_ee_capture_default;
+
+bool scr_emitter_capture_default(void) { return scr_ee_capture_default; }
+
+/* `EventEmitter.captureRejections = value`: validateBoolean, then the
+ * default for emitters constructed from now on. Borrows value. */
+void scr_emitter_set_capture_default(const ScrDyn *value) {
+  if (value->kind != SCR_DYN_BOOL) {
+    scr_dyn_arg_type_fail("EventEmitter.captureRejections", "of type boolean", value);
+    return;
+  }
+  scr_ee_capture_default = value->v.b;
+}
+
+bool scr_emitter_capturing(const ScrEmitter *em) { return em->reg != NULL && em->reg->capture; }
+
+void scr_emitter_set_capturing(ScrEmitter *em, bool capture) {
+  if (capture || em->reg != NULL) scr_ee_reg_ensure(em)->capture = capture;
+}
+
+/* The constructor's options (Node's EventEmitter.init): a truthy
+ * captureRejections must be a boolean and sets the flag; anything else
+ * takes the default. Borrows opts; may throw ERR_INVALID_ARG_TYPE. */
+void scr_emitter_capture_options(ScrEmitter *em, const ScrDyn *opts) {
+  ScrDyn *o = opts->kind == SCR_DYN_TYPED_REF ? scr_dyn_typed_ref_materialize(opts)
+              : opts->kind == SCR_DYN_OBJ     ? scr_dyn_retain((ScrDyn *)opts)
+                                              : NULL;
+  ScrDyn *v = o != NULL ? scr_dyn_obj_read(o, "captureRejections", 17) : NULL; /* +1 */
+  if (o != NULL) scr_dyn_release(o);
+  if (scr_exc_pending()) {
+    if (v != NULL) scr_dyn_release(v);
+    return;
+  }
+  bool capture = scr_ee_capture_default;
+  if (v != NULL && scr_dyn_truthy(v)) {
+    if (v->kind != SCR_DYN_BOOL) {
+      scr_dyn_arg_type_fail("options.captureRejections", "of type boolean", v);
+      scr_dyn_release(v);
+      return;
+    }
+    capture = true;
+  }
+  if (v != NULL) scr_dyn_release(v);
+  scr_emitter_set_capturing(em, capture);
+}
+
 ScrEmitter *scr_emitter_new(void) {
   /* Always collector-headered: the registry holds closures, so the
    * emitter hierarchy is unconditionally cycle-capable (the canonical
@@ -321,6 +372,14 @@ ScrEmitter *scr_emitter_new(void) {
   em->reg = NULL;
   em->cls = "EventEmitter";
   scr_obj_alloc_note();
+  if (scr_ee_capture_default) scr_emitter_set_capturing(em, true);
+  return em;
+}
+
+/* new EventEmitter(options). Borrows opts; may throw. */
+ScrEmitter *scr_emitter_new_options(const ScrDyn *opts) {
+  ScrEmitter *em = scr_emitter_new();
+  scr_emitter_capture_options(em, opts);
   return em;
 }
 
@@ -335,7 +394,12 @@ ScrStr *scr_emitter_class_name(const ScrEmitter *em) {
  * already zeroed reg and stamped the concrete class's display name, so
  * construction has nothing left to do — the call exists so the super()
  * statement lowers to a real site (and may grow options later). */
-void scr_emitter_init(void *obj) { (void)obj; }
+void scr_emitter_init(void *obj) {
+  if (scr_ee_capture_default) scr_emitter_set_capturing(obj, true);
+}
+
+/* super(options) into the emitter prefix. Borrows both; may throw. */
+void scr_emitter_init_options(void *obj, const ScrDyn *opts) { scr_emitter_capture_options(obj, opts); }
 
 ScrEmitter *scr_emitter_retain(ScrEmitter *em) {
   if (em && em->rc != SIZE_MAX) {

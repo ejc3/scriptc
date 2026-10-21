@@ -74,6 +74,38 @@ ScrPromise *scr_events_once_signal(ScrEmitter *em, ScrStr *name, ScrClosure *box
                                    ScrEeInvoke inv, ScrClosure *err_boxer, void *err_adapter,
                                    ScrEeInvoke err_inv, ScrDyn *signal);
 void scr_events_once_signal_fire(ScrClosure *cb, ScrArr *args);
+/* events.on(emitter, name[, { signal, close }]) consumed by a for-await
+ * loop (scr_events_on.c), through a handle. open takes the scr_events_once
+ * arguments plus the checked-dynamic signal (borrowed; undefined without
+ * one) and returns the handle, or 0 with the exception pending. close
+ * registers one close event's listener, arm the signal's abort listener.
+ * next is the iterator's next() (+1 promise of the event's arguments, or of
+ * an empty array with done set); done reads and clears that flag; return
+ * is return() (+1 promise). Their adapters end in scr_events_on_fire. */
+double scr_events_on_open(ScrEmitter *em, ScrStr *name, ScrClosure *boxer, void *adapter,
+                          ScrEeInvoke inv, ScrClosure *err_boxer, void *err_adapter,
+                          ScrEeInvoke err_inv, ScrDyn *signal);
+void scr_events_on_close(double h, ScrStr *name, ScrClosure *boxer, void *adapter, ScrEeInvoke inv);
+void scr_events_on_arm(double h);
+ScrPromise *scr_events_on_next(double h);
+bool scr_events_on_done(double h);
+ScrPromise *scr_events_on_return(double h);
+void scr_events_on_fire(ScrClosure *cb, ScrArr *args);
+/* captureRejections (Node's kCapture). The flag lives in the registry:
+ * new emitters take EventEmitter.captureRejections (the default), and the
+ * constructor's options can set it. scr_emitter_rejected
+ * (scr_events_capture.c) takes a listener promise's rejection: on the next
+ * tick it calls the emitter's Symbol.for('nodejs.rejection') method with
+ * (err, event, ...args), or emits 'error' with capture off. */
+bool scr_emitter_capture_default(void);
+void scr_emitter_set_capture_default(const ScrDyn *value);
+bool scr_emitter_capturing(const ScrEmitter *em);
+void scr_emitter_set_capturing(ScrEmitter *em, bool capture);
+void scr_emitter_capture_options(ScrEmitter *em, const ScrDyn *opts);
+ScrEmitter *scr_emitter_new_options(const ScrDyn *opts);
+void scr_emitter_init_options(void *obj, const ScrDyn *opts);
+void scr_emitter_rejected(ScrEmitter *em, ScrDyn *em_dyn, ScrDyn *handler, ScrDyn *err, ScrStr *name,
+                          ScrArr *args);
 /* Removes the listener entry whose closure is `cb` (borrowed) without a
  * 'removeListener' event: the undo of an add whose 'newListener'
  * announcement threw. */

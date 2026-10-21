@@ -55,6 +55,12 @@ export interface NativeLinkFeatures {
   /** Builtin functions read as values (Buffer.byteLength, Buffer.alloc,
    * fs.realpathSync) link scr_builtin_values.c; absent (false) otherwise. */
   builtinValues?: boolean;
+  /** events.on in for-await loops: scr_events_on.c. Absent (not false)
+   * for programs without it. */
+  eventsOn?: boolean;
+  /** captureRejections over promise-returning listeners:
+   * scr_events_capture.c. Absent (not false) for programs without it. */
+  eventsCapture?: boolean;
   events: boolean;
   emitter: boolean;
   symbol: boolean;

@@ -84,6 +84,10 @@ export const OPTIONAL_RUNTIME_SOURCES = [
   ["scr_events_emitter.c", "emitter"],
   // events.once with options registers through the emitter and event-target units.
   ["scr_events_once_signal.c", "eventsOnceSignal"],
+  // events.on iterates through the emitter and event-target units.
+  ["scr_events_on.c", "eventsOn"],
+  // captureRejections calls through the symbol and checked-dynamic units.
+  ["scr_events_capture.c", "eventsCapture"],
   ["scr_dyn_handle.c", any("emitter", "netEffective")],
   ["scr_symbol.c", "symbol"],
   ["scr_bigint_assert.c", all("assert", "bigint")],

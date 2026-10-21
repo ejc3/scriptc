@@ -549,6 +549,8 @@ async function compileExecutableNative(
     ...(features.eventsOnceSignal ? { eventsOnceSignal: true } : {}),
     ...(features.dynBufferNum ? { dynBufferNum: true } : {}),
     ...(features.builtinValues ? { builtinValues: true } : {}),
+    ...(features.eventsOn ? { eventsOn: true } : {}),
+    ...(features.eventsCapture ? { eventsCapture: true } : {}),
     events: features.events,
     emitter: features.emitter,
     symbol: features.symbol,

@@ -79,6 +79,7 @@ import { fenceEnumObjectValue } from "../lower-enums.js";
 import { mixinFnOfCallee } from "../lower-mixins.js";
 import { isNavigatorGlobal, refuseNavigator } from "../builtins/navigator.js";
 import { wasiGuestPath } from "../../../wasi-paths.js";
+import { lowerEventsCaptureMember } from "../lower-event-emitter.js";
 
 export function lowerIdentifierExpr(lowerer: Lowerer, expr: ts.Identifier, loc: SrcLoc): IrExpr {
   if (lowerer.isStdlibGlobal(expr, "console")) {
@@ -504,6 +505,19 @@ export function lowerIdentifierExpr(lowerer: Lowerer, expr: ts.Identifier, loc: 
           expr,
           "read require('events').defaultMaxListeners or EventEmitter.defaultMaxListeners where the value is needed",
         );
+      }
+      // A named import of captureRejections is a copy taken at load (or
+      // at declaration, for CommonJS destructuring); the symbol is a
+      // constant.
+      if (bi.module === "events" && bi.member === "captureRejections") {
+        lowerer.noLowering(
+          "events.captureRejections through a named binding",
+          expr,
+          "read EventEmitter.captureRejections where the current default is needed",
+        );
+      }
+      if (bi.module === "events" && bi.member === "captureRejectionSymbol") {
+        return lowerEventsCaptureMember(bi.member, loc)!;
       }
       const c = builtinModuleConstOf(lowerer, bi.module, bi.member);
       if (c !== undefined) return builtinConstLit(c, loc);

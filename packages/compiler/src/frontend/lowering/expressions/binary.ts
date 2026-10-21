@@ -1070,15 +1070,16 @@ export function lowerBinary(lowerer: Lowerer, expr: ts.BinaryExpression): IrExpr
     // the value crosses into the checked-dynamic tree and the runtime ladder throws
     // ERR_INVALID_ARG_TYPE / ERR_OUT_OF_RANGE with Node's exact slot
     // name; valid numbers apply. The expression's value is the RHS
-    // (JS's assignment yield).
+    // (JS's assignment yield). `EventEmitter.captureRejections = v` is
+    // the same shape over validateBoolean.
     if (
       op === ts.SyntaxKind.EqualsToken &&
       ts.isPropertyAccessExpression(expr.left) &&
       !expr.left.questionDotToken &&
-      expr.left.name.text === "defaultMaxListeners"
+      (expr.left.name.text === "defaultMaxListeners" || expr.left.name.text === "captureRejections")
     ) {
       const bi = lowerer.builtinMemberOf(expr.left);
-      if (bi && bi.module === "events" && bi.member === "defaultMaxListeners") {
+      if (bi && bi.module === "events" && bi.member === expr.left.name.text) {
         const rhs = lowerer.lowerExpr(expr.right);
         if (rhs.type.kind === "dyn" || rhs.kind === "unitLit" || lowerer.dynConvertible(rhs.type)) {
           const valTmp = lowerer.declareHiddenLocal("%setVal", rhs.type);
@@ -1098,16 +1099,25 @@ export function lowerBinary(lowerer: Lowerer, expr: ts.BinaryExpression): IrExpr
               { kind: "varDecl", localId: valTmp.id, init: rhs, loc },
               {
                 kind: "exprStmt",
-                expr: {
-                  kind: "libCall",
-                  fn: "emitter.setDefaultMaxChk",
-                  args: [
-                    dynVal,
-                    { kind: "strLit", value: "defaultMaxListeners", type: STRING, loc },
-                  ],
-                  type: VOID,
-                  loc,
-                },
+                expr:
+                  bi.member === "captureRejections"
+                    ? {
+                        kind: "libCall",
+                        fn: "emitter.setCaptureDefault",
+                        args: [dynVal],
+                        type: VOID,
+                        loc,
+                      }
+                    : {
+                        kind: "libCall",
+                        fn: "emitter.setDefaultMaxChk",
+                        args: [
+                          dynVal,
+                          { kind: "strLit", value: "defaultMaxListeners", type: STRING, loc },
+                        ],
+                        type: VOID,
+                        loc,
+                      },
                 loc,
               },
             ],

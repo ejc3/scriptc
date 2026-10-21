@@ -6537,8 +6537,14 @@ declare module "node:async_hooks" {
  * parameter lists have no static types and fence at the registration). */
 declare module "events" {
   class EventEmitter {
-    constructor();
+    constructor(options?: { captureRejections?: boolean });
     static defaultMaxListeners: number;
+    /* The captureRejections default of emitters constructed from now on. */
+    static captureRejections: boolean;
+    /* Symbol.for('nodejs.rejection'): the method a captureRejections
+     * emitter calls with (err, eventName, ...args) instead of emitting
+     * 'error'. */
+    static readonly captureRejectionSymbol: unique symbol;
     /* Listeners registered under this symbol observe 'error' emits first
      * (an emit with no 'error' listener still throws). */
     static readonly errorMonitor: unique symbol;
@@ -6575,6 +6581,17 @@ declare module "events" {
       eventName: string,
       options?: { signal?: AbortSignal },
     ): Promise<unknown[]>;
+    // Each event's arguments, iterated by a for await loop.
+    export function on(
+      emitter: EventEmitter | NodeJS.ReadableStream | NodeJS.WritableStream,
+      eventName: string,
+      options?: {
+        signal?: AbortSignal;
+        close?: string[];
+        highWaterMark?: number;
+        lowWaterMark?: number;
+      },
+    ): AsyncIterableIterator<any[]>;
     /* The emitter's own listenerCount/getMaxListeners/setMaxListeners/
      * listeners, over EventEmitter instances. */
     export function listenerCount(emitter: EventEmitter, eventName: string | symbol): number;

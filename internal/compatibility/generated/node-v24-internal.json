@@ -311,9 +311,9 @@
       "apiEntries": 78,
       "static": {
         "supported": 18,
-        "partial": 35,
+        "partial": 38,
         "refused": 0,
-        "not-implemented": 25,
+        "not-implemented": 22,
         "by-design": 0,
         "unreviewed": 0,
         "not-applicable": 0
@@ -41925,7 +41925,15 @@
           "tests/corpus/5248-event-target-subclass-warnings.ts",
           "tests/corpus/5846-events-esm-default-max.ts",
           "tests/corpus/5847-events-cjs-default-max.cjs",
-          "tests/corpus/5885-events-max-listener-helpers.ts"
+          "tests/corpus/5885-events-max-listener-helpers.ts",
+          "tests/corpus/6810-events-on-queue.ts",
+          "tests/corpus/6811-events-on-error-close.ts",
+          "tests/corpus/6812-events-on-signal.ts",
+          "tests/corpus/6814-events-on-forms.ts",
+          "tests/corpus/6815-events-capture-error.ts",
+          "tests/corpus/6816-events-capture-symbol.ts",
+          "tests/corpus/6817-events-capture-defaults.ts",
+          "tests/corpus/6818-events-capture-subclass.ts"
         ]
       },
       "anchorSource": "chapter"
@@ -43976,8 +43984,14 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:events"
+        "status": "partial",
+        "evidence": "compiler-dedicated:events.on",
+        "tests": [
+          "tests/corpus/6810-events-on-queue.ts",
+          "tests/corpus/6811-events-on-error-close.ts",
+          "tests/corpus/6812-events-on-signal.ts",
+          "tests/corpus/6814-events-on-forms.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -44110,8 +44124,14 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:events"
+        "status": "partial",
+        "evidence": "compiler-dedicated:captureRejections",
+        "tests": [
+          "tests/corpus/6815-events-capture-error.ts",
+          "tests/corpus/6816-events-capture-symbol.ts",
+          "tests/corpus/6817-events-capture-defaults.ts",
+          "tests/corpus/6818-events-capture-subclass.ts"
+        ]
       },
       "anchorSource": "chapter"
     },
@@ -44133,8 +44153,14 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:events"
+        "status": "partial",
+        "evidence": "compiler-dedicated:captureRejectionSymbol",
+        "tests": [
+          "tests/corpus/6815-events-capture-error.ts",
+          "tests/corpus/6816-events-capture-symbol.ts",
+          "tests/corpus/6817-events-capture-defaults.ts",
+          "tests/corpus/6818-events-capture-subclass.ts"
+        ]
       },
       "anchorSource": "chapter"
     },
