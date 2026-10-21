@@ -212,6 +212,8 @@ ScrStr *scr_util_strip_vt(const struct ScrDyn *input);
 ScrStr *scr_util_to_usv_string(const struct ScrDyn *input);
 ScrStr *scr_util_to_string(const struct ScrDyn *input); /* ToString alone */
 void scr_dyn_install_to_primitive_symbol(struct ScrDyn *key);
+void scr_dyn_install_to_string_tag_symbol(struct ScrDyn *key);
+void scr_dyn_install_has_instance_symbol(struct ScrDyn *key);
 
 /* RegExp.escape(s) — ES2025 EncodeForRegExpEscape per code point: leading
  * ASCII alphanumeric hex-escapes, SyntaxCharacters and '/' take a

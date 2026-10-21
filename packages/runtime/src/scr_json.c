@@ -61,6 +61,8 @@ static void scr_json_oom(void) {
 static SCR_TL ScrDyn *scr_iterator_symbol;
 static SCR_TL ScrDyn *scr_async_iterator_symbol;
 static SCR_TL ScrDyn *scr_to_primitive_symbol;
+static SCR_TL ScrDyn *scr_to_string_tag_symbol;
+static SCR_TL ScrDyn *scr_has_instance_symbol;
 static bool scr_dyn_generator(const ScrDyn *value) {
   return value && value->kind == SCR_DYN_TYPED_REF &&
     (value->v.typed_ref.type_key[0] == 'g' || value->v.typed_ref.type_key[0] == 'a') &&
@@ -72,7 +74,8 @@ static bool scr_dyn_generator_symbol(const ScrDyn *value, const ScrDyn *key) {
 }
 static ScrDyn *scr_builtin_iterator_method(const ScrDyn *value);
 static bool scr_builtin_iterable(const ScrDyn *value) {
-  return value->kind == SCR_DYN_ARR || value->kind == SCR_DYN_STR || value->kind == SCR_DYN_BYTES ||
+  return value->kind == SCR_DYN_ARR || value->kind == SCR_DYN_STR ||
+    (value->kind == SCR_DYN_BYTES && !value->v.bytes->is_data_view) ||
     (scr_dyn_generator(value) && value->v.typed_ref.type_key[0] != 'a') ||
     (value->kind == SCR_DYN_TYPED_REF && scr_dyn_ref_is_array(value)) ||
     (value->kind == SCR_DYN_HANDLE && (value->v.handle.tag == SCR_DYNH_ITERATOR || value->v.handle.tag == SCR_DYNH_ITERATOR_HELPER || value->v.handle.tag == SCR_DYNH_MAP || value->v.handle.tag == SCR_DYNH_SET ||
@@ -137,6 +140,28 @@ void scr_dyn_install_to_primitive_symbol(ScrDyn *key) {
   if (scr_to_primitive_symbol) return;
   scr_to_primitive_symbol = scr_dyn_retain(key);
   scr_atexit(scr_to_primitive_symbol_cleanup);
+}
+
+static void scr_to_string_tag_symbol_cleanup(void) {
+  scr_dyn_release(scr_to_string_tag_symbol);
+  scr_to_string_tag_symbol = NULL;
+}
+
+void scr_dyn_install_to_string_tag_symbol(ScrDyn *key) {
+  if (scr_to_string_tag_symbol) return;
+  scr_to_string_tag_symbol = scr_dyn_retain(key);
+  scr_atexit(scr_to_string_tag_symbol_cleanup);
+}
+
+static void scr_has_instance_symbol_cleanup(void) {
+  scr_dyn_release(scr_has_instance_symbol);
+  scr_has_instance_symbol = NULL;
+}
+
+void scr_dyn_install_has_instance_symbol(ScrDyn *key) {
+  if (scr_has_instance_symbol) return;
+  scr_has_instance_symbol = scr_dyn_retain(key);
+  scr_atexit(scr_has_instance_symbol_cleanup);
 }
 
 void scr_dyn_install_async_iterator_symbol(ScrDyn *key) {
@@ -5928,9 +5953,31 @@ ScrDyn *scr_dyn_array_from_iterator(const ScrDyn *source) {
   return checked;
 }
 
+static bool scr_dyn_builtin_symbol_member(const ScrDyn *value, const ScrDyn *key);
+
+/* The inherited Symbol.toStringTag of a builtin value (the name in its
+ * Object.prototype.toString tag), or NULL when it has none or `key` is
+ * another symbol. */
+static ScrDyn *scr_dyn_builtin_to_string_tag(const ScrDyn *value, const ScrDyn *key) {
+  if (!scr_to_string_tag_symbol || key->v.symbol.value != scr_to_string_tag_symbol->v.symbol.value ||
+      !scr_dyn_builtin_symbol_member(value, key))
+    return NULL;
+  ScrStr *tag = scr_dyn_object_tag(value);
+  if (!tag) return NULL;
+  ScrStr *name = scr_str_new(tag->data + 8, tag->len - 9);
+  scr_str_release(tag);
+  ScrDyn *out = scr_dyn_new_str(name);
+  scr_str_release(name);
+  return out;
+}
+
 ScrDyn *scr_dyn_symbol_key_get(const ScrDyn *value, const ScrDyn *key, bool optional) {
-  if (scr_dyn_generator(value)) return scr_dyn_generator_symbol(value, key)
-    ? scr_iterator_function(4, &scr_iterator_self_call, "[Symbol.iterator]") : scr_dyn_retain(scr_dyn_undefined());
+  if (scr_dyn_generator(value)) {
+    if (scr_dyn_generator_symbol(value, key))
+      return scr_iterator_function(4, &scr_iterator_self_call, "[Symbol.iterator]");
+    ScrDyn *tag = scr_dyn_builtin_to_string_tag(value, key);
+    return tag || scr_exc_pending() ? tag : scr_dyn_retain(scr_dyn_undefined());
+  }
   if (value->kind == SCR_DYN_TYPED_REF) {
     ScrDyn *view = scr_dyn_typed_ref_materialize(value);
     ScrDyn *result = scr_exc_pending() ? NULL : scr_dyn_symbol_key_get(view, key, optional);
@@ -5957,11 +6004,17 @@ ScrDyn *scr_dyn_symbol_key_get(const ScrDyn *value, const ScrDyn *key, bool opti
     if (member || scr_exc_pending()) return member;
   }
   ScrDyn *receiver = scr_dyn_symbol_receiver(value);
-  if (!receiver) return scr_exc_pending() ? NULL : scr_dyn_retain(scr_dyn_undefined());
+  if (!receiver) {
+    if (scr_exc_pending()) return NULL;
+    ScrDyn *tag = scr_dyn_builtin_to_string_tag(value, key);
+    return tag || scr_exc_pending() ? tag : scr_dyn_retain(scr_dyn_undefined());
+  }
   ScrDynEntry *entry = scr_dyn_symbol_entry(receiver, key, false);
   ScrDyn *out;
-  if (!entry) out = scr_dyn_retain(scr_dyn_undefined());
-  else if (!entry->accessor) out = scr_dyn_retain(entry->value);
+  if (!entry) {
+    out = scr_dyn_builtin_to_string_tag(value, key);
+    if (!out && !scr_exc_pending()) out = scr_dyn_retain(scr_dyn_undefined());
+  } else if (!entry->accessor) out = scr_dyn_retain(entry->value);
   else if (!entry->getter) out = scr_dyn_retain(scr_dyn_undefined());
   else {
     ScrDyn *getter = scr_dyn_retain(entry->getter);
@@ -6037,6 +6090,39 @@ static ScrDyn *scr_dyn_define_symbol(ScrDyn *target, ScrDyn *key, ScrDyn *descri
   return scr_exc_pending() ? NULL : scr_dyn_retain(target);
 }
 
+/* Whether a builtin value inherits the well-known symbol `key` from its
+ * prototype: Function.prototype[Symbol.hasInstance],
+ * Date.prototype[Symbol.toPrimitive], and the @@toStringTag of every
+ * builtin whose Object.prototype.toString tag is not one of the classic
+ * builtin tags (Map, Set, Promise, typed arrays, ArrayBuffer, DataView,
+ * iterators, generators, ...). */
+static bool scr_dyn_is_symbol(const ScrDyn *key, const ScrDyn *symbol) {
+  return symbol && key->v.symbol.value == symbol->v.symbol.value;
+}
+
+static bool scr_dyn_builtin_symbol_member(const ScrDyn *value, const ScrDyn *key) {
+  if (scr_dyn_is_symbol(key, scr_has_instance_symbol)) return value->kind == SCR_DYN_FUNC;
+  if (scr_dyn_is_symbol(key, scr_to_primitive_symbol))
+    return value->kind == SCR_DYN_HANDLE && value->v.handle.tag == SCR_DYNH_DATE;
+  if (!scr_dyn_is_symbol(key, scr_to_string_tag_symbol) || value->kind == SCR_DYN_PROXY) return false;
+  if (value->kind == SCR_DYN_FUNC) return (scr_dyn_function_kind(value) & 3) != 0;
+  if (value->kind == SCR_DYN_OBJ || value->kind == SCR_DYN_ARR) return false;
+  ScrStr *tag = scr_dyn_object_tag(value);
+  if (!tag) {
+    scr_exc_clear();
+    return false;
+  }
+  static const char *const classic[] = {"Object", "Array", "Function", "Error", "Boolean", "Number",
+                                        "String", "Date", "RegExp", "Arguments"};
+  bool found = true;
+  for (size_t i = 0; i < sizeof classic / sizeof classic[0]; i++) {
+    size_t length = strlen(classic[i]);
+    if (tag->len == length + 9 && memcmp(tag->data + 8, classic[i], length) == 0) found = false;
+  }
+  scr_str_release(tag);
+  return found;
+}
+
 static bool scr_dyn_key_probe_computed(const ScrDyn *value, const ScrDyn *raw_key, int mode) {
   ScrDyn *key = scr_dyn_property_key_value(raw_key);
   if (!key) return false;
@@ -6047,7 +6133,7 @@ static bool scr_dyn_key_probe_computed(const ScrDyn *value, const ScrDyn *raw_ke
     return out;
   }
   if (scr_dyn_generator(value)) {
-    bool found = mode == 0 && scr_dyn_generator_symbol(value, key);
+    bool found = mode == 0 && (scr_dyn_generator_symbol(value, key) || scr_dyn_builtin_symbol_member(value, key));
     scr_dyn_release(key);
     return found;
   }
@@ -6071,6 +6157,10 @@ static bool scr_dyn_key_probe_computed(const ScrDyn *value, const ScrDyn *raw_ke
       scr_dyn_release(key);
       return mode == 0;
     }
+  }
+  if (mode == 0 && scr_dyn_builtin_symbol_member(value, key)) {
+    scr_dyn_release(key);
+    return true;
   }
   ScrDyn *receiver = scr_dyn_symbol_receiver(value);
   ScrDynEntry *entry = receiver ? scr_dyn_symbol_entry(receiver, key, mode != 0) : NULL;
@@ -6509,8 +6599,25 @@ ScrStr *scr_dyn_object_tag(const ScrDyn *d) {
   case SCR_DYN_SYMBOL: tag = "[object Symbol]"; break;
   case SCR_DYN_NUM: tag = "[object Number]"; break;
   case SCR_DYN_STR: tag = "[object String]"; break;
-  case SCR_DYN_ARR: tag = "[object Array]"; break;
-  case SCR_DYN_OBJ: tag = "[object Object]"; break;
+  case SCR_DYN_ARR:
+  case SCR_DYN_OBJ: {
+    /* A string Symbol.toStringTag, own or inherited, names the tag. A
+     * program that never created the symbol has no object carrying it. */
+    if (scr_to_string_tag_symbol) {
+      ScrDyn *own = scr_dyn_symbol_key_get(d, scr_to_string_tag_symbol, false);
+      if (!own) return NULL;
+      if (own->kind == SCR_DYN_STR) {
+        ScrStr *parts[3] = {scr_str_new("[object ", 8), scr_str_retain(own->v.str), scr_str_new("]", 1)};
+        ScrStr *out = scr_str_concat_parts(parts, 3);
+        for (size_t i = 0; i < 3; i++) scr_str_release(parts[i]);
+        scr_dyn_release(own);
+        return out;
+      }
+      scr_dyn_release(own);
+    }
+    tag = d->kind == SCR_DYN_ARR ? "[object Array]" : "[object Object]";
+    break;
+  }
   case SCR_DYN_HANDLE:
     if ((d->v.handle.tag >= SCR_DYNH_ABORT_SIGNAL &&
          d->v.handle.tag <= SCR_DYNH_ABORT_CONTROLLER) || d->v.handle.tag == SCR_DYNH_EVENT_TARGET ||
@@ -6551,7 +6658,15 @@ ScrStr *scr_dyn_object_tag(const ScrDyn *d) {
     scr_jb_putc(&b, ']');
     return scr_jb_finish(&b);
   }
-  case SCR_DYN_FUNC: tag = "[object Function]"; break;
+  case SCR_DYN_FUNC: {
+    /* Generator, async and async generator functions inherit the
+     * Symbol.toStringTag of their kind's prototype. */
+    static const char *const kinds[] = {
+      "[object Function]", "[object GeneratorFunction]", "[object AsyncFunction]", "[object AsyncGeneratorFunction]",
+    };
+    tag = kinds[scr_dyn_function_kind(d) & 3];
+    break;
+  }
   case SCR_DYN_PROMISE: tag = "[object Promise]"; break;
   default: {
     const char *msg = "Object.prototype.toString.call on this checked-dynamic kind is not supported yet";
