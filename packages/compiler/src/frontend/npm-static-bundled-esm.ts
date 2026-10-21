@@ -503,15 +503,64 @@ export function lowerBundledEsmInits(
     )
       mainTarget = (rhs.arguments.nodes[0] as ts.Identifier).text;
   }
-  const tables = new Map<string, { stmt: ts.Statement; entries: [string, ts.Expression][] }>();
+  const tables = new Map<
+    string,
+    { stmt: ts.Statement | null; entries: [string, ts.Expression][] }
+  >();
+  // The bundle's own entry namespace keeps its statements (the CommonJS
+  // rewrite builds the export table from them); its table only answers
+  // member reads through `__toCommonJS(main)` in the bundle's own code.
+  let mainTable: { stmt: ts.Statement | null; entries: [string, ts.Expression][] } | null = null;
   for (const stmt of sf.statements.nodes) {
     if (!ts.isExpressionStatement(stmt) || !ts.isCallExpression(stmt.expression)) continue;
     const table = exportTableOf(stmt.expression);
-    if (table !== null && table.target !== mainTarget) {
+    if (table !== null && table.target === mainTarget) {
+      mainTable = mainTable === null ? { stmt, entries: table.entries } : null;
+    } else if (table !== null) {
       if (tables.has(table.target)) return { degrade: ESM_SHAPE_DEGRADE };
       tables.set(table.target, { stmt, entries: table.entries });
     }
   }
+  // A module that exports only types keeps an empty namespace object
+  // (`var x_exports = {}`) with no __export call: an empty table, read
+  // only through `__toCommonJS(x_exports)`.
+  for (const [name, t] of top) {
+    if (tables.has(name) || name === mainTarget || writes.has(name)) continue;
+    const d = t.node;
+    if (!ts.isVariableDeclaration(d) || d.initializer === undefined) continue;
+    const init = unparen(d.initializer);
+    if (!ts.isObjectLiteralExpression(init) || init.properties.nodes.length !== 0) continue;
+    const uses = (refsByName.get(name) ?? []).filter((x) => x !== d.name);
+    if (
+      uses.length > 0 &&
+      uses.every((x) => {
+        const p = x.parent;
+        return (
+          p !== undefined &&
+          ts.isCallExpression(p) &&
+          ts.isIdentifier(p.expression) &&
+          helperBase(p.expression.text) === "__toCommonJS" &&
+          p.arguments.nodes.length === 1
+        );
+      })
+    )
+      tables.set(name, { stmt: null, entries: [] });
+  }
+  // A star re-export into the entry (`__reExport(main, ns, module.exports)`)
+  // adds names its export table does not list, so the entry namespace's
+  // missing names are unknown.
+  const entryReExports =
+    mainTarget !== null &&
+    (refsByName.get(mainTarget) ?? []).some((x) => {
+      const p = x.parent;
+      return (
+        p !== undefined &&
+        ts.isCallExpression(p) &&
+        ts.isIdentifier(p.expression) &&
+        helperBase(p.expression.text) === "__reExport" &&
+        p.arguments.nodes[0] === x
+      );
+    });
   const lowered = new Set<string>();
   /** Some binding between the use site and the top level rebinds a name
    * the table's getters read. */
@@ -673,11 +722,25 @@ export function lowerBundledEsmInits(
   }
 
   for (const r of allRefs) {
-    const table = tables.get(r.text);
+    const p = r.parent;
+    const isMain =
+      r.text === mainTarget &&
+      mainTable !== null &&
+      p !== undefined &&
+      ts.isCallExpression(p) &&
+      ts.isIdentifier(p.expression) &&
+      helperBase(p.expression.text) === "__toCommonJS" &&
+      p.arguments.nodes.length === 1 &&
+      !(
+        p.parent !== undefined &&
+        ts.isBinaryExpression(p.parent) &&
+        p.parent.right === p &&
+        ts.isPropertyAccessExpression(p.parent.left)
+      );
+    const table = isMain ? mainTable! : tables.get(r.text);
     if (table === undefined) continue;
     if (loaderSpans.some((span) => r.getStart(sf) >= span.start && r.getEnd() <= span.end))
       continue;
-    const p = r.parent;
     // The table's own declaration and __export call are handled below.
     if (p !== undefined && ts.isVariableDeclaration(p) && p.name === r) continue;
     if (
@@ -712,13 +775,33 @@ export function lowerBundledEsmInits(
       else break;
     }
     const values = new Map(table.entries);
-    const memberRead = (access: ts.Node | undefined, of: ts.Node): boolean =>
-      access !== undefined &&
-      ts.isPropertyAccessExpression(access) &&
-      access.expression === of &&
-      values.has(access.name.text) &&
-      plainRead(access) &&
-      (!calledWithReceiver(access) || receiverHidden(values, access.name.text));
+    // A name the module does not export reads undefined on the namespace
+    // object (`__esModule` reads true); plain reads only, never calls. The
+    // namespace is an ordinary object, so a name Object.prototype answers
+    // (constructor, toString, __proto__) is no missing name, and neither
+    // is any name of an entry that star re-exports other modules.
+    const missing = new Set<string>();
+    const readNames = new Set<string>();
+    const memberRead = (access: ts.Node | undefined, of: ts.Node): boolean => {
+      if (
+        access === undefined ||
+        !ts.isPropertyAccessExpression(access) ||
+        access.expression !== of ||
+        !plainRead(access)
+      )
+        return false;
+      const name = access.name.text;
+      if (!values.has(name)) {
+        const parent = access.parent;
+        if (parent !== undefined && ts.isCallExpression(parent) && parent.expression === access)
+          return false;
+        if (name in Object.prototype || (isMain && entryReExports)) return false;
+        missing.add(name);
+        return true;
+      }
+      readNames.add(name);
+      return !calledWithReceiver(access) || receiverHidden(values, name);
+    };
     const holder = ns.parent;
     // `__reExport(main, ns, module.exports)`: a star re-export of the
     // module into the bundle's own exports (`export * from` in its entry).
@@ -752,7 +835,7 @@ export function lowerBundledEsmInits(
         end: holder.parent.getEnd(),
         text: `${init}__export(${mainTarget}, { ${entries} });`,
       });
-      lowered.add(r.text);
+      if (!isMain) lowered.add(r.text);
       continue;
     }
     let readable = memberRead(holder, ns);
@@ -793,17 +876,22 @@ export function lowerBundledEsmInits(
         };
       return { degrade: `its shipped JS ${why}` };
     }
+    // The entry namespace answers only the names read here.
+    const entries = isMain ? table.entries.filter(([n]) => readNames.has(n)) : table.entries;
     // The getters read top-level bindings: nothing between the use site
     // and the top level may rebind one of their names.
-    if (shadowed(p, table.entries)) return { degrade: `its shipped JS ${why}` };
-    const getters = table.entries
-      .map(
+    if (shadowed(p, entries)) return { degrade: `its shipped JS ${why}` };
+    const getters = [
+      ...entries.map(
         ([n, value]) =>
           `get ${/^[A-Za-z_$][\w$]*$/.test(n) ? n : JSON.stringify(n)}() { return ${getterText(value)}; }`,
-      )
-      .join(", ");
+      ),
+      ...[...missing].map(
+        (n) => `get ${n}() { return ${n === "__esModule" ? "true" : "void 0"}; }`,
+      ),
+    ].join(", ");
     edits.push({ start: p.getStart(sf), end: p.getEnd(), text: `{ ${getters} }` });
-    lowered.add(r.text);
+    if (!isMain) lowered.add(r.text);
   }
   // A table nothing reads (its module is never required) goes too: its
   // names are no exports of the bundle.
@@ -812,7 +900,10 @@ export function lowerBundledEsmInits(
     const live = (refsByName.get(target) ?? []).some((x) => {
       const p = x.parent;
       if (p !== undefined && ts.isVariableDeclaration(p) && p.name === x) return false;
-      return !(x.getStart(sf) >= table.stmt.getStart(sf) && x.getEnd() <= table.stmt.getEnd());
+      return (
+        table.stmt === null ||
+        !(x.getStart(sf) >= table.stmt.getStart(sf) && x.getEnd() <= table.stmt.getEnd())
+      );
     });
     if (!live) lowered.add(target);
   }
@@ -828,7 +919,8 @@ export function lowerBundledEsmInits(
       writes.has(target)
     )
       return { degrade: ESM_SHAPE_DEGRADE };
-    edits.push({ start: table.stmt.getStart(sf), end: table.stmt.getEnd(), text: "" });
+    if (table.stmt !== null)
+      edits.push({ start: table.stmt.getStart(sf), end: table.stmt.getEnd(), text: "" });
     deadDeclarators.add(decl);
   }
   // Every removed declarator in one pass: declarators of one statement

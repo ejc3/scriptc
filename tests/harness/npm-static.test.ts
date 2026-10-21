@@ -1657,6 +1657,14 @@ describe(`npm-static pilots${sanitize ? " (sanitized)" : ""}`, () => {
     ]);
   }, 180_000);
 
+  // 2595: a bundle's own entry namespace and an empty (types-only) one,
+  // read through `(init_x(), __toCommonJS(x_exports))`.
+  test("bundled namespace reads 2595-bundled-entry-namespace byte-match Node", async () => {
+    await expectNodeParity(join(fixturesRoot, "npm/cases/2595-bundled-entry-namespace/main.ts"), [
+      "gtemptyns",
+    ]);
+  }, 180_000);
+
   // 2596: cross-spawn 7's function export with typed function members
   // behind require bindings.
   test("function export members 2596-function-export-members byte-match Node", async () => {
