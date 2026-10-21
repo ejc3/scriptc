@@ -1801,6 +1801,55 @@ export function lowerArrayReduceCall(
   return { kind: "call", callee: helper, args, type: accT, loc };
 }
 
+/** `ta.reduce(f)` / `ta.reduce(f, init)` and reduceRight on a typed array:
+ * the array reduce loop over the view's elements, which are always present
+ * numbers. The callback may declare any prefix of (acc, value, index,
+ * array); the accumulator is the call's checked type with an initial value
+ * and a number without one, widened with undefined when the callback can
+ * return a missing value. */
+export function lowerBytesReduceCall(
+  lowerer: Lowerer,
+  call: ts.CallExpression,
+  access: ts.PropertyAccessExpression,
+  method: "reduce" | "reduceRight",
+  bytesT: IrType & { kind: "bytes" },
+): IrExpr {
+  const loc = locOf(call);
+  const nArgs = call.arguments.nodes.length;
+  if (nArgs < 1 || nArgs > 2 || call.arguments.nodes.some(ts.isSpreadElement)) {
+    lowerer.noLowering(`.${method} with ${nArgs} arguments on typed arrays`, call);
+  }
+  const receiver = lowerer.lowerExprExpecting(access.expression, bytesT);
+  const hasInit = nArgs === 2;
+  const accT =
+    lowerer.runtimeOptionalReduceTypes.get(call) ?? (hasInit ? lowerer.irTypeOf(call) : F64);
+  if (accT.kind === "void" || accT.kind === "func") lowerer.badType(call, lowerer.typeOf(call));
+  const { fnArg, arity } = lowerArrayCallback(
+    lowerer,
+    call.arguments.nodes[0]!,
+    [accT, F64],
+    bytesT,
+    false,
+    accT,
+  );
+  const helper = reduceHelper(
+    lowerer,
+    method,
+    F64,
+    accT,
+    fnArg.type.ret,
+    arity,
+    hasInit,
+    loc,
+    "",
+    null,
+    bytesT,
+  );
+  const args: IrExpr[] = [receiver, fnArg];
+  if (hasInit) args.push(lowerer.lowerExprExpecting(call.arguments.nodes[1]!, accT));
+  return { kind: "call", callee: helper, args, type: accT, loc };
+}
+
 /** The reduce/reduceRight loops, from existing IR nodes:
  *
  *   with init:    acc = z; n = a.length; for (...) acc = f(acc, a[i]); return acc;
@@ -1810,7 +1859,9 @@ export function lowerArrayReduceCall(
  *
  * reduce walks 0→n-1, reduceRight n-1→0; the seed without an initial
  * value is a[0] / a[n-1] and the loop starts one past it. The empty-array
- * TypeError message is Node's exact message. */
+ * TypeError message is Node's exact message. Over a typed array (bytesT)
+ * every index below the length holds a number, so there are no holes to
+ * skip. */
 function reduceHelper(
   lowerer: Lowerer,
   method: "reduce" | "reduceRight",
@@ -1822,13 +1873,14 @@ function reduceHelper(
   loc: SrcLoc,
   site = "",
   fastT: CallbackType | null = null,
+  bytesT: (IrType & { kind: "bytes" }) | null = null,
 ): string {
-  const key = `${method}:${typeKey(elem)}:${typeKey(accT)}:${typeKey(fnRet)}:${arity}:${hasInit ? "init" : "seed"}${site}${fastT ? ":split" : ""}`;
+  const key = `${bytesT ? `bytes.${bytesT.elem}.` : ""}${method}:${typeKey(elem)}:${typeKey(accT)}:${typeKey(fnRet)}:${arity}:${hasInit ? "init" : "seed"}${site}${fastT ? ":split" : ""}`;
   const existing = lowerer.arrHofHelpers.get(key);
   if (existing) return existing;
-  const name = `%arr.${method}.${lowerer.arrHofHelpers.size}`;
+  const name = `%${bytesT ? "bytes" : "arr"}.${method}.${lowerer.arrHofHelpers.size}`;
   lowerer.arrHofHelpers.set(key, name);
-  if (method === "reduce")
+  if (method === "reduce" && !bytesT)
     lowerer.arrHofInfo.set(name, {
       method,
       elem,
@@ -1839,14 +1891,24 @@ function reduceHelper(
       split: !!fastT,
       hasInit,
     });
-  const arrT = arrayOf(elem);
-  const fnT = funcOf([accT, arrayValueType(lowerer, elem), F64, arrT].slice(0, arity), fnRet);
+  const arrT: IrType = bytesT ?? arrayOf(elem);
+  const valueT = bytesT ? F64 : arrayValueType(lowerer, elem);
+  const fnT = funcOf([accT, valueT, F64, arrT].slice(0, arity), fnRet);
 
   const n = varRef("n.0", F64, loc);
   const i = varRef("i.0", F64, loc);
   const right = method === "reduceRight";
   const at = (index: IrExpr): IrExpr =>
-    arrayValueRead(lowerer, varRef("a.0", arrT, loc), index, elem, loc);
+    bytesT
+      ? {
+          kind: "bytesIntrinsic",
+          method: "get",
+          receiver: varRef("a.0", arrT, loc),
+          args: [index],
+          type: F64,
+          loc,
+        }
+      : arrayValueRead(lowerer, varRef("a.0", arrT, loc), index, elem, loc);
   const locals: IrLocal[] = [
     { id: "a.0", name: "a", type: arrT, mutable: true },
     { id: "f.0", name: "f", type: fnT, mutable: true },
@@ -1884,25 +1946,29 @@ function reduceHelper(
           } satisfies IrStmt,
         ]
       : ([
-          {
-            kind: "while",
-            cond: {
-              kind: "ternary",
-              cond: inRange,
-              then: {
-                kind: "unary",
-                op: "!",
-                operand: currentArrayIndexPresent(arrT, loc),
-                type: BOOL,
-                loc,
-              },
-              else_: boolLit(false, loc),
-              type: BOOL,
-              loc,
-            },
-            body: [advance],
-            loc,
-          },
+          ...(bytesT
+            ? []
+            : [
+                {
+                  kind: "while",
+                  cond: {
+                    kind: "ternary",
+                    cond: inRange,
+                    then: {
+                      kind: "unary",
+                      op: "!",
+                      operand: currentArrayIndexPresent(arrT, loc),
+                      type: BOOL,
+                      loc,
+                    },
+                    else_: boolLit(false, loc),
+                    type: BOOL,
+                    loc,
+                  },
+                  body: [advance],
+                  loc,
+                } satisfies IrStmt,
+              ]),
           {
             kind: "if",
             cond: { kind: "unary", op: "!", operand: inRange, type: BOOL, loc },
@@ -1933,6 +1999,21 @@ function reduceHelper(
           advance,
         ] satisfies IrStmt[])),
   ];
+  const step: IrStmt = {
+    kind: "assign",
+    localId: "acc.0",
+    value: lowerer.coerceToExpected(
+      {
+        kind: "callValue",
+        callee: varRef("f.0", fnT, loc),
+        args: [varRef("acc.0", accT, loc), at(i), i, varRef("a.0", arrT, loc)].slice(0, arity),
+        type: fnRet,
+        loc,
+      },
+      accT,
+    ),
+    loc,
+  };
   const loop: IrStmt = {
     kind: "for",
     init: null,
@@ -1945,38 +2026,27 @@ function reduceHelper(
       value: { kind: "bin", op: right ? "-" : "+", left: i, right: numLit(1, loc), type: F64, loc },
       loc,
     },
-    body: [
-      {
-        kind: "if",
-        cond: currentArrayIndexPresent(arrT, loc),
-        then: [
-          {
-            kind: "assign",
-            localId: "acc.0",
-            value: lowerer.coerceToExpected(
-              {
-                kind: "callValue",
-                callee: varRef("f.0", fnT, loc),
-                args: [varRef("acc.0", accT, loc), at(i), i, varRef("a.0", arrT, loc)].slice(
-                  0,
-                  arity,
-                ),
-                type: fnRet,
-                loc,
-              },
-              accT,
-            ),
-            loc,
-          },
-        ],
-        else_: null,
-        loc,
-      },
-    ],
+    body: bytesT
+      ? [step]
+      : [{ kind: "if", cond: currentArrayIndexPresent(arrT, loc), then: [step], else_: null, loc }],
     loc,
   };
   const body: IrStmt[] = [
-    arrayLengthDeclaration(arrT, loc),
+    bytesT
+      ? {
+          kind: "varDecl",
+          localId: "n.0",
+          init: {
+            kind: "bytesIntrinsic",
+            method: "length",
+            receiver: varRef("a.0", arrT, loc),
+            args: [],
+            type: F64,
+            loc,
+          },
+          loc,
+        }
+      : arrayLengthDeclaration(arrT, loc),
     ...seedStmts,
     loop,
     { kind: "return", value: varRef("acc.0", accT, loc), loc },

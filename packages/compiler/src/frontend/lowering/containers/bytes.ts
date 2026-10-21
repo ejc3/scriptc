@@ -36,6 +36,7 @@ import {
   lowerStaticallyUndefinedArgument,
 } from "../optional-arguments.js";
 import { lowerCheckedArrayFrom } from "./array-construction.js";
+import { lowerBytesReduceCall } from "./array-callbacks.js";
 import { lowerToNumberArgument } from "../lower-exprs.js";
 import { lowerBytesIteratorValue } from "../iterator-adapters.js";
 
@@ -465,6 +466,9 @@ export function lowerBytesMethodCall(
   }
   if (name === "sort" || name === "toSorted") {
     return lowerBytesSortCall(lowerer, call, access, receiverIr);
+  }
+  if (name === "reduce" || name === "reduceRight") {
+    return lowerBytesReduceCall(lowerer, call, access, name, receiverIr);
   }
   // values()/keys()/entries() as iterator objects (for...of heads and
   // stored numeric iterators lower before this).

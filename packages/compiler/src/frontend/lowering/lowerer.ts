@@ -6356,6 +6356,23 @@ export class Lowerer {
                   changed = true;
                 }
               }
+            } else if (
+              receiver?.kind === "bytes" &&
+              (node.expression.name.text === "reduce" ||
+                node.expression.name.text === "reduceRight") &&
+              callbackReturnsOptional(callback)
+            ) {
+              // A typed array's elements are always numbers, but a callback
+              // returning a missing value makes the accumulator optional:
+              // widen it and the call's result, never the element.
+              provenanceSite = node;
+              if (promoteHofCallback(callback, [0])) changed = true;
+              const result = this.runtimeOptionalType(this.irTypeOf(node));
+              const previous = this.runtimeOptionalReduceTypes.get(node);
+              if (!previous || !typeEquals(previous, result)) {
+                this.runtimeOptionalReduceTypes.set(node, result);
+                changed = true;
+              }
             }
           }
         }
