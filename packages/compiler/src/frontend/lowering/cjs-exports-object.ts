@@ -576,10 +576,10 @@ export function cjsWholeExportSlotOwner(
 
 /** The member names program files may write on `dep`'s whole export value
  * through a require of it: assignments, updates and deletes of `fmt.name`,
- * `fmt["name"]` or `require("./lib").name`. "any" for a computed key, and
- * for any use of the value other than a member access, a call or `typeof`,
- * which hands it to code that can write it (`Object.assign(fmt, …)`,
- * `mutate(fmt)`, a reassignment of the binding). */
+ * `fmt["name"]` or `require("./lib").name`, and the keys builtins such as
+ * `Object.assign(fmt, { name })` and `Object.defineProperty(fmt, "name", …)`
+ * write. "any" for a computed key. Writes by code the value is passed to
+ * (`mutate(fmt)`) are not seen. */
 function wholeExportWrites(lowerer: Lowerer, dep: ts.SourceFile): ReadonlySet<string> | "any" {
   const cached = lowerer.cjsWholeExportWrites.get(dep);
   if (cached !== undefined) return cached;
@@ -596,8 +596,50 @@ function wholeExportWrites(lowerer: Lowerer, dep: ts.SourceFile): ReadonlySet<st
       if (ts.isStringLiteralLike(key)) names.add(key.text);
       else any = true;
     } else if (
-      !(ts.isCallExpression(parent) && parent.expression === value) &&
-      !ts.isTypeOfExpression(parent)
+      ts.isCallExpression(parent) &&
+      parent.arguments.nodes[0] === value &&
+      ts.isPropertyAccessExpression(parent.expression) &&
+      ts.isIdentifier(parent.expression.expression)
+    ) {
+      mutatorCall(
+        `${parent.expression.expression.text}.${parent.expression.name.text}`,
+        parent.arguments.nodes.slice(1),
+      );
+    }
+  };
+  // Builtins that write properties of their first argument.
+  const mutatorCall = (callee: string, rest: readonly ts.Expression[]): void => {
+    if (callee === "Object.assign") {
+      for (const source of rest) {
+        if (!ts.isObjectLiteralExpression(source)) {
+          any = true;
+          continue;
+        }
+        for (const prop of source.properties.nodes) {
+          const key =
+            ts.isPropertyAssignment(prop) ||
+            ts.isShorthandPropertyAssignment(prop) ||
+            ts.isMethodDeclaration(prop)
+              ? prop.name
+              : undefined;
+          if (key !== undefined && (ts.isIdentifier(key) || ts.isStringLiteralLike(key)))
+            names.add(key.text);
+          else any = true;
+        }
+      }
+    } else if (
+      callee === "Object.defineProperty" ||
+      callee === "Reflect.set" ||
+      callee === "Reflect.defineProperty" ||
+      callee === "Reflect.deleteProperty"
+    ) {
+      const key = rest[0];
+      if (key !== undefined && ts.isStringLiteralLike(key)) names.add(key.text);
+      else any = true;
+    } else if (
+      callee === "Object.defineProperties" ||
+      callee === "Object.setPrototypeOf" ||
+      callee === "Reflect.setPrototypeOf"
     ) {
       any = true;
     }

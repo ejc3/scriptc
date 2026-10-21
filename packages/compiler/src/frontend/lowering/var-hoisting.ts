@@ -393,43 +393,54 @@ function primitiveArgument(e: ts.Expression): boolean {
 
 /** True when evaluating `stmt` cannot re-enter the module: no call into
  * user code, no construction, no require, no read of `module`/`exports`
- * beyond stores into them. Function and class bodies do not run here. */
+ * beyond stores into them. Function bodies, class methods and instance
+ * field initializers do not run here. */
 function cannotReenter(stmt: ts.Statement): boolean {
   if (ts.isFunctionDeclaration(stmt) || ts.isEmptyStatement(stmt)) return true;
   let quiet = true;
-  ts.walkPreorder(stmt, (n) => {
-    if (!quiet) return "stop";
-    if (
-      ts.isFunctionLike(n) ||
-      ts.isClassDeclaration(n) ||
-      ts.isClassExpression(n) ||
-      ts.isClassStaticBlockDeclaration(n)
-    )
-      return "skip";
-    if (ts.isCallExpression(n)) {
-      if (!builtinCall(n)) quiet = false;
-    } else if (ts.isNewExpression(n) || ts.isTaggedTemplateExpression(n)) {
-      quiet = false;
-    } else if (ts.isIdentifier(n) && (n.text === "module" || n.text === "exports")) {
-      // Only as the root of a store target.
-      let target: ts.Node = n;
-      while (
-        target.parent !== undefined &&
-        ts.isPropertyAccessExpression(target.parent) &&
-        target.parent.expression === target
-      )
-        target = target.parent;
-      const assign = target.parent;
+  const visit = (root: ts.Node): void => {
+    ts.walkPreorder(root, (n) => {
+      if (!quiet) return "stop";
+      // A class runs its heritage, decorators, computed member names,
+      // static field initializers and static blocks where it is defined;
+      // methods and instance field initializers run later.
       if (
-        assign === undefined ||
-        !ts.isBinaryExpression(assign) ||
-        assign.operatorToken.kind !== ts.SyntaxKind.EqualsToken ||
-        assign.left !== target
-      )
+        ts.isFunctionLike(n) ||
+        (ts.isPropertyDeclaration(n) &&
+          !ts.getModifiers(n)?.some((modifier) => modifier.kind === ts.SyntaxKind.StaticKeyword))
+      ) {
+        for (const modifier of ts.getModifiers(n) ?? [])
+          if (ts.isDecorator(modifier)) visit(modifier);
+        const name = (n as { name?: ts.Node }).name;
+        if (name !== undefined && ts.isComputedPropertyName(name)) visit(name);
+        return "skip";
+      }
+      if (ts.isCallExpression(n)) {
+        if (!builtinCall(n)) quiet = false;
+      } else if (ts.isNewExpression(n) || ts.isTaggedTemplateExpression(n)) {
         quiet = false;
-    }
-    return undefined;
-  });
+      } else if (ts.isIdentifier(n) && (n.text === "module" || n.text === "exports")) {
+        // Only as the root of a store target.
+        let target: ts.Node = n;
+        while (
+          target.parent !== undefined &&
+          ts.isPropertyAccessExpression(target.parent) &&
+          target.parent.expression === target
+        )
+          target = target.parent;
+        const assign = target.parent;
+        if (
+          assign === undefined ||
+          !ts.isBinaryExpression(assign) ||
+          assign.operatorToken.kind !== ts.SyntaxKind.EqualsToken ||
+          assign.left !== target
+        )
+          quiet = false;
+      }
+      return undefined;
+    });
+  };
+  visit(stmt);
   return quiet;
 }
 
