@@ -5,6 +5,7 @@ import { isPrivateWriteReceiver } from "../private-brands.js";
 import type { Lowerer } from "../lowerer.js";
 import {
   type FieldTarget,
+  assignmentTarget,
   bigintCompoundValue,
   compoundUnsupported,
   concatOperand,
@@ -187,7 +188,7 @@ export function lowerIncDec(
   const loc = locOf(expr);
   const op = expr.operator === ts.SyntaxKind.PlusPlusToken ? "+" : "-";
   if (!ts.isIdentifier(expr.operand)) {
-    const access = expr.operand;
+    const access = assignmentTarget(expr.operand);
     if (
       (!ts.isPropertyAccessExpression(access) && !ts.isElementAccessExpression(access)) ||
       access.questionDotToken

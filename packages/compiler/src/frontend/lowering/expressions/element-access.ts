@@ -33,6 +33,7 @@ import { lowerGlobalValue } from "../lower-global-value.js";
 import { expandoMemberRead } from "../lower-expando.js";
 import {
   assertedElementKeepsUndefined,
+  assignmentTarget,
   compoundUnsupported,
   concatOperand,
   dynCompoundValue,
@@ -1425,7 +1426,7 @@ export function lowerElementCompoundParts(
   op: CompoundOp,
   statement: boolean,
 ): { expr: IrExpr | null; stmts: IrStmt[] | null } {
-  const target = expr.left as ts.ElementAccessExpression;
+  const target = assignmentTarget(expr.left) as ts.ElementAccessExpression;
   fenceNodeModuleMutation(lowerer, target, "assignment");
   const loc = locOf(expr);
   // A record through a computed key (`totals[side] += n` with a literal
@@ -1652,7 +1653,7 @@ function arrayStringOperand(arr: IrExpr, index: IrExpr, loc: SrcLoc): IrExpr {
 export function lowerElementWrite(lowerer: Lowerer, expr: ts.BinaryExpression): IrStmt {
   const prototype = lowerClassPrototypeComputedAssignment(lowerer, expr);
   if (prototype) return { kind: "exprStmt", expr: prototype, loc: locOf(expr) };
-  const target = expr.left as ts.ElementAccessExpression;
+  const target = assignmentTarget(expr.left) as ts.ElementAccessExpression;
   fenceNodeModuleMutation(lowerer, target, "assignment");
   const globalKey = globalSymbolKey(lowerer, target.expression, target.argumentExpression);
   if (globalKey) {

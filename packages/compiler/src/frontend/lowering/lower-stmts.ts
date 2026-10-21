@@ -206,6 +206,7 @@ import { globalSymbolKey } from "./expressions/global-symbols.js";
 import { identifiersNamed } from "./identifier-uses.js";
 import { lowerShortCircuitAssignment } from "./expressions/nullish-assignment.js";
 import {
+  assignmentTarget,
   builtinGlobalValue,
   jsHoldsDynObject,
   lowerEnvironmentKey,
@@ -7339,7 +7340,8 @@ export function lowerExprStatement(lowerer: Lowerer, expr: ts.Expression): IrStm
         const ex = lowerExpandoAssignStmt(lowerer, expr);
         if (ex) return ex;
       }
-      if (ts.isElementAccessExpression(expr.left)) return lowerer.lowerElementWrite(expr);
+      if (ts.isElementAccessExpression(assignmentTarget(expr.left)))
+        return lowerer.lowerElementWrite(expr);
       if (ts.isPropertyAccessExpression(expr.left)) {
         fenceNodeModuleMutation(lowerer, expr.left, "assignment");
         // The writable Event accessors on Event subclass instances.
@@ -7950,27 +7952,28 @@ export function lowerExprStatement(lowerer: Lowerer, expr: ts.Expression): IrStm
     const compound = COMPOUND_ASSIGN_OPS[opKind];
     if (compound !== undefined) {
       // Desugar `x op= e` to `x = x op e` — reads x before e, like JS.
-      if (ts.isElementAccessExpression(expr.left)) {
+      const left = assignmentTarget(expr.left);
+      if (ts.isElementAccessExpression(left)) {
         // `this[kLimit] += v` — a declared symbol-keyed class field is
         // the dotted compound in element spelling. Array and byte-view
         // elements use the sequenced indexed compound path.
-        if (symbolFieldInfo(lowerer, expr.left)) {
-          return lowerer.lowerFieldCompound(expr.left, compound, expr.right, locOf(expr));
+        if (symbolFieldInfo(lowerer, left)) {
+          return lowerer.lowerFieldCompound(left, compound, expr.right, locOf(expr));
         }
         return lowerElementCompoundStatement(lowerer, expr, compound);
       }
-      if (ts.isPropertyAccessExpression(expr.left)) {
+      if (ts.isPropertyAccessExpression(left)) {
         // `N.x += v` — the namespace-qualified spelling of a module-
         // global compound assign (nsWritableTarget resolves the member's
         // global; everything else keeps the field path). Expando
         // function members (`foo.count += 1`) are module globals too.
-        if (!expr.left.questionDotToken) {
-          const exT = expandoWritableTarget(lowerer, expr.left);
+        if (!left.questionDotToken) {
+          const exT = expandoWritableTarget(lowerer, left);
           if (exT) return lowerCompoundToTarget(lowerer, expr, compound, exT);
-          const nsT = nsWritableTarget(lowerer, expr.left);
+          const nsT = nsWritableTarget(lowerer, left);
           if (nsT) return lowerCompoundToTarget(lowerer, expr, compound, nsT);
         }
-        return lowerer.lowerFieldCompound(expr.left, compound, expr.right, locOf(expr));
+        return lowerer.lowerFieldCompound(left, compound, expr.right, locOf(expr));
       }
       if (!ts.isIdentifier(expr.left)) {
         lowerer.unsupported("SC1090", expr.left, "assignment to non-variables");
@@ -7995,11 +7998,12 @@ export function lowerExprStatement(lowerer: Lowerer, expr: ts.Expression): IrStm
     (expr.operator === ts.SyntaxKind.PlusPlusToken ||
       expr.operator === ts.SyntaxKind.MinusMinusToken)
   ) {
-    if (ts.isPropertyAccessExpression(expr.operand) || ts.isElementAccessExpression(expr.operand)) {
+    const operand = assignmentTarget(expr.operand);
+    if (ts.isPropertyAccessExpression(operand) || ts.isElementAccessExpression(operand)) {
       // Statement and value positions share ToNumeric and reference order.
       // Namespace/expando globals retain their direct binding path below.
-      const binding = ts.isPropertyAccessExpression(expr.operand)
-        ? (expandoWritableTarget(lowerer, expr.operand) ?? nsWritableTarget(lowerer, expr.operand))
+      const binding = ts.isPropertyAccessExpression(operand)
+        ? (expandoWritableTarget(lowerer, operand) ?? nsWritableTarget(lowerer, operand))
         : null;
       if (binding) return lowerIncDecToTarget(lowerer, expr, binding);
       return {

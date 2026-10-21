@@ -1352,6 +1352,15 @@ export function eqComparableUnion(lowerer: Lowerer, unionId: string): boolean {
   return !!def && def.arms.every((a) => a.kind !== "dyn" && a.kind !== "caught");
 }
 
+/** The reference an assignment or update writes. Parentheses and non-null
+ * assertions around a target change neither the reference nor the stored
+ * type: `a[i]! += x` and `(o.n)++` write `a[i]` and `o.n`. */
+export function assignmentTarget(node: ts.Expression): ts.Expression {
+  let e = node;
+  while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
+  return e;
+}
+
 /** Convert an undefined-armed numeric value at an arithmetic use. Ordinary
  * reads preserve their tagged value; JavaScript's ToNumber(undefined) is NaN,
  * so compounds and binary arithmetic use this checked one-time extraction. */
@@ -1644,7 +1653,9 @@ export function lowerDynMemberAssignment(
   recv: IrExpr,
 ): IrExpr {
   const loc = locOf(expr);
-  const target = expr.left as ts.ElementAccessExpression | ts.PropertyAccessExpression;
+  const target = assignmentTarget(expr.left) as
+    | ts.ElementAccessExpression
+    | ts.PropertyAccessExpression;
   const receiver = lowerer.declareHiddenLocal("%setReceiver", DYN);
   const keyValue = ts.isElementAccessExpression(target)
     ? lowerer.lowerExprExpecting(target.argumentExpression, DYN)
