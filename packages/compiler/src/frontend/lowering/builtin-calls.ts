@@ -105,11 +105,20 @@ export function lowerBuiltinCall(
     return lowerAddAbortListener(lowerer, expr, loc);
   }
   if (bi.module === "events" && bi.member === "once") return lowerEventsOnce(lowerer, expr, loc);
+  // The callee's symbol: a fence names @types/node when only it declares
+  // the member.
+  const calleeSymbol = (): ts.Symbol | null | undefined =>
+    namespaceMember
+      ? lowerer.checker.getSymbolAtLocation(namespaceMember)
+      : ts.isIdentifier(expr.expression)
+        ? lowerer.resolveValueSymbol(expr.expression)
+        : undefined;
   if (bi.module === "events" && bi.member === "on") {
     lowerer.noLowering(
       "events.on outside a for-await loop",
       expr,
       "iterate it directly: for await (const args of on(emitter, name)) { ... }",
+      calleeSymbol(),
     );
   }
   if (bi.module === "perf_hooks" && bi.member === "monitorEventLoopDelay") {
@@ -179,11 +188,7 @@ export function lowerBuiltinCall(
       `${bi.module}.${bi.member}`,
       expr,
       builtinFenceHintOf(bi.module, bi.member),
-      namespaceMember
-        ? lowerer.checker.getSymbolAtLocation(namespaceMember)
-        : ts.isIdentifier(expr.expression)
-          ? lowerer.resolveValueSymbol(expr.expression)
-          : undefined,
+      calleeSymbol(),
     );
   }
   return lowerer.lowerBuiltinModuleCall(expr, bi, builtinFn, loc);

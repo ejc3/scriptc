@@ -139,7 +139,6 @@ import { earlyReadVarSymbols } from "./var-hoisting.js";
 import { recordTextCodecClass } from "../../ir/ir.js";
 import { assignLegacyTiers, type DynamicFunction } from "../../ir/tiers.js";
 import { promoteJsvals } from "../../ir/jsval.js";
-import { fallbackTainted, type FallbackSite, type FallbackTaint } from "./checked-fallback.js";
 import {
   analyzeTiers,
   dynamicStatementCount,
@@ -2245,10 +2244,6 @@ export class Lowerer {
   runtimeOptionalBindingType(node: ts.Node): IrType | null;
   runtimeOptionalBindingType(node: ts.Node, fallback: IrType): IrType;
   runtimeOptionalBindingType(node: ts.Node, fallback?: IrType): IrType | null {
-    // A binding holding a failed checked value is dynamic: undefined is one
-    // of its values already (checked-fallback.ts).
-    if (this.fallbackTaint !== null && ts.isIdentifier(node) && fallbackTainted(this, node))
-      return fallback ?? null;
     const patternType = this.runtimeOptionalPatternTypes.get(node);
     if (patternType) return patternType;
     const symbol = ts.isIdentifier(node)
@@ -2648,14 +2643,6 @@ export class Lowerer {
   /** True while re-lowering a base function's 2nd+ instance: the same source
    * statements were already counted for the first instance. */
   suppressStats = false;
-  /** Checked-cast fallback (checked-fallback.ts): sites opened by their
-   * root's declaration, by root; armed sites whose tails have not split
-   * yet; the taint of the dynamic tail being lowered; and the number of
-   * splits whose tails are being lowered (each lowers its tail twice). */
-  fallbackSites = new Map<ts.Symbol, FallbackSite>();
-  fallbackArmed: FallbackSite[] = [];
-  fallbackTaint: FallbackTaint | null = null;
-  fallbackSplitDepth = 0;
   /** Comparisons interned by operand representations and equality semantics. */
   readonly equalityHelpers = new Map<string, string>();
   /** Synthetic array-HOF loop functions (map/filter/forEach desugar),
@@ -5426,19 +5413,40 @@ export class Lowerer {
     /** `const { a, b } = table` over an index-signature record: a name that
      * is not a declared field reads the index signature and can be
      * missing. */
-    const scanRecordPattern = (name: ts.ObjectBindingPattern, init: ts.Expression): boolean => {
-      const sourceType = this.mapTypeOf(this.typeOf(init));
+    const scanRecordPattern = (
+      name: ts.ObjectBindingPattern,
+      init: ts.Node,
+      sourceType: IrType | null = this.mapTypeOf(this.typeOf(init)),
+    ): boolean => {
       if (sourceType?.kind !== "record") return false;
       const shape = this.shapes.get(sourceType.shapeId);
-      const indexValue = shape?.indexValue;
-      if (!shape || shape.tuple || !indexValue || indexValue.kind === "dyn") return false;
+      if (!shape || shape.tuple) return false;
+      const indexValue = shape.indexValue;
       let changed = false;
       for (const el of name.elements.nodes) {
+        // A nested pattern reads its element the same way
+        // (`const { limits: { [key]: limit } } = config`).
+        if (!el.dotDotDotToken && el.name !== undefined && ts.isObjectBindingPattern(el.name)) {
+          if (scanRecordPattern(el.name, init, this.mapTypeOf(this.typeOf(el.name))))
+            changed = true;
+          continue;
+        }
+        if (!indexValue || indexValue.kind === "dyn") continue;
         if (el.dotDotDotToken || el.initializer || !ts.isIdentifier(el.name)) continue;
         const key = el.propertyName ?? el.name;
-        if (!ts.isIdentifier(key) && !ts.isStringLiteral(key) && !ts.isNumericLiteral(key))
+        // A computed key that folds to one name reads like that name; a
+        // runtime key reads the entry of a record with no declared fields
+        // (runtimeKeyPatternRead), which can be missing too.
+        const keyName = ts.isComputedPropertyName(key)
+          ? this.foldedStringKeyOf(key.expression)
+          : ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNumericLiteral(key)
+            ? key.text
+            : undefined;
+        if (keyName === undefined) continue;
+        if (
+          keyName === null ? shape.fields.length > 0 : shape.fields.some((f) => f.name === keyName)
+        )
           continue;
-        if (shape.fields.some((field) => field.name === key.text)) continue;
         const symbol = symbolOf(el.name);
         if (!symbol || optionalSymbols.has(symbol)) continue;
         const read = this.mapTypeOf(this.typeOf(el.name));
@@ -6049,6 +6057,7 @@ export class Lowerer {
       ts.walkPreorder(sf, (node) => {
         if (
           ts.isVariableDeclaration(node) ||
+          (ts.isParameter(node) && ts.isObjectBindingPattern(node.name)) ||
           ts.isBinaryExpression(node) ||
           ts.isCallExpression(node) ||
           ts.isNewExpression(node) ||
@@ -6070,6 +6079,12 @@ export class Lowerer {
         if (elementStates.scan(node)) changed = true;
         if (ts.isForOfStatement(node))
           presentLoops.set(node, !elementStates.loopMayYieldUndefined(node));
+        // A parameter pattern reads its argument like a declaration's
+        // pattern reads its initializer.
+        if (ts.isParameter(node) && ts.isObjectBindingPattern(node.name)) {
+          if (scanRecordPattern(node.name, node, this.mapTypeOf(this.typeOf(node.name))))
+            changed = true;
+        }
         if (ts.isVariableDeclaration(node)) {
           if (node.initializer) {
             const result = optionalPrimitiveResultType(node.initializer);
@@ -7967,14 +7982,10 @@ export class Lowerer {
   ): IrStmt & { kind: "runtimeFence" } {
     const loc = locOf(node);
     const code = first?.code ?? fallback?.code ?? "SC1090";
-    const plainMessage =
+    const baseMessage =
       first?.message ??
       fallback?.message ??
       "this statement uses a construct with no static lowering";
-    const baseMessage =
-      this.fallbackTaint !== null
-        ? `a value that failed its checked cast reached code with no dynamic lowering: ${plainMessage}`
-        : plainMessage;
     const messageLoc = first?.loc ?? loc;
     const source = first
       ? (this.program.getSourceFile(messageLoc.file) ?? ts.getSourceFileOfNode(node))
@@ -8282,9 +8293,6 @@ export class Lowerer {
   }
 
   stdlibMemberFence(access: ts.PropertyAccessExpression): void {
-    // A member of a failed checked value reads dynamically, whatever the
-    // static member resolves to (checked-fallback.ts).
-    if (this.fallbackTaint !== null && fallbackTainted(this, access.expression)) return;
     return stdlibMemberFence(this, access);
   }
 
@@ -8334,10 +8342,6 @@ export class Lowerer {
   }
 
   typeOf(node: ts.Node): ts.Type {
-    // The dynamic lowering of a checked-cast fallback tail reads values
-    // derived from the failed value as `any`.
-    if (this.fallbackTaint !== null && fallbackTainted(this, node))
-      return this.checker.getAnyType();
     if (ts.isPropertyAccessExpression(node) && isJsSourceFile(ts.getSourceFileOfNode(node))) {
       const receiver =
         node.expression.kind === ts.SyntaxKind.ThisKeyword && this.fnStack.length > 0
@@ -12021,7 +12025,6 @@ export class Lowerer {
   }
 
   npmMemberFence(access: ts.PropertyAccessExpression): void {
-    if (this.fallbackTaint !== null && fallbackTainted(this, access.expression)) return;
     return npmMemberFence(this, access);
   }
 
