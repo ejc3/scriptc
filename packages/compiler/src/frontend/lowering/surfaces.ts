@@ -3168,10 +3168,6 @@ export function stdlibMemberFence(lowerer: Lowerer, access: ts.PropertyAccessExp
   } else if (recvIr?.kind === "f64" && member === "toString") {
     hint =
       "radix-free conversion is a template literal away: `${x}`; toString(radix) is unsupported";
-  } else if (container === "Math" && (member === "min" || member === "max")) {
-    hint =
-      `Math.${member} lowers with any number of plain arguments or ONE number[] spread — ` +
-      `mixed spread/positional lists don't: spread a single array (Math.${member}(...xs))`;
   } else if (
     recvIr?.kind === "array" &&
     member === "index" &&

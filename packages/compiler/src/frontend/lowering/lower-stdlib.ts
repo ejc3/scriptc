@@ -2458,9 +2458,7 @@ export function lowerStdlibMethodCall(
     }
   }
   // `Math.max(...xs)` / `Math.min(...xs)` over a number[]: a STATIC
-  // runtime fold (NaN poisons and ±0 follows JS ordering). This
-  // one-spread form lowers; mixed spread/positional argument lists keep
-  // the nest-calls fence.
+  // runtime fold (NaN poisons and ±0 follows JS ordering).
   if (
     isMath &&
     (name === "max" || name === "min") &&
@@ -2492,6 +2490,28 @@ export function lowerStdlibMethodCall(
       kind: "libCall",
       fn: name === "max" ? "math.maxArr" : "math.minArr",
       args: [src],
+      type: F64,
+      loc,
+    };
+  }
+  // A mixed spread/positional list (`Math.max(...xs, floor)`): the
+  // arguments pack, left to right, into one number[] the same fold reads,
+  // as Math.hypot's do. The fold is the left fold of the scalar compare,
+  // so the packed order is the result Node computes.
+  if (
+    staticMath &&
+    (name === "max" || name === "min") &&
+    call.arguments.nodes.some((a) => ts.isSpreadElement(a))
+  ) {
+    const elems = call.arguments.nodes.map((a) =>
+      ts.isSpreadElement(a) ? lowerer.lowerExprExpecting(a.expression, arrayOf(F64)) : mathArg(a),
+    );
+    const spreads = call.arguments.nodes.flatMap((a, i) => (ts.isSpreadElement(a) ? [i] : []));
+    const packed: IrExpr = { kind: "arrayLit", elems, spreads, type: arrayOf(F64), loc };
+    return {
+      kind: "libCall",
+      fn: name === "max" ? "math.maxArr" : "math.minArr",
+      args: [packed],
       type: F64,
       loc,
     };
