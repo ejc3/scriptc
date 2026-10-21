@@ -2069,6 +2069,12 @@ export const LIB_FN_SIGS = defineLibFnSignatures({
   /** net.SocketAddress and net.BlockList (scr_net.c): the constructors
    * take the argument array; the handles are dyn values. */
   "net.socketAddressNew": { argTypes: [DYN], result: DYN },
+  /** util.MIMEType and util.MIMEParams (scr_mime.c): the constructor takes
+   * the argument array; the handles are dyn values. */
+  "util.mimeTypeNew": { argTypes: [DYN], result: DYN },
+  "util.mimeTypeParse": { argTypes: [DYN], result: DYN },
+  "util.mimeParamsNew": { argTypes: [], result: DYN },
+  "util.isMime": { argTypes: [DYN, F64], result: BOOL },
   "net.socketAddressParse": { argTypes: [DYN], result: DYN },
   "net.isSocketAddress": { argTypes: [DYN], result: BOOL },
   "net.blockListNew": { argTypes: [DYN], result: DYN },

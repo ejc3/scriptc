@@ -3304,6 +3304,28 @@ declare module "util" {
     options?: { validateStream?: boolean; stream?: unknown },
   ): string;
   export function parseEnv(content: string): { [key: string]: string | undefined };
+  export class MIMEType {
+    constructor(input: string | { toString: () => string });
+    static parse(input: string | { toString: () => string }): MIMEType | null;
+    type: string;
+    subtype: string;
+    readonly essence: string;
+    readonly params: MIMEParams;
+    toString(): string;
+    toJSON(): string;
+  }
+  export class MIMEParams {
+    delete(name: string): void;
+    entries(): IterableIterator<[name: string, value: string]>;
+    get(name: string): string | null;
+    has(name: string): boolean;
+    keys(): IterableIterator<string>;
+    set(name: string, value: string): void;
+    values(): IterableIterator<string>;
+    toString(): string;
+    toJSON(): string;
+    [Symbol.iterator](): IterableIterator<[name: string, value: string]>;
+  }
   export function inherits(constructor: unknown, superConstructor: unknown): void;
   export interface DeprecateOptions {
     modifyPrototype?: boolean;

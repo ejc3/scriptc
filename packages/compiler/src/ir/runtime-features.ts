@@ -92,6 +92,11 @@ const DYN_ASYNC_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "util.debuglog",
   "util.deprecate",
   "util.inherits",
+  // util.MIMEType and util.MIMEParams (scr_mime.c, linked with this unit).
+  "util.isMime",
+  "util.mimeParamsNew",
+  "util.mimeTypeNew",
+  "util.mimeTypeParse",
   "util.styleText",
 ]);
 

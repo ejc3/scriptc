@@ -850,10 +850,10 @@
       "entries": 118,
       "apiEntries": 109,
       "static": {
-        "supported": 0,
-        "partial": 72,
+        "supported": 11,
+        "partial": 74,
         "refused": 0,
-        "not-implemented": 37,
+        "not-implemented": 24,
         "by-design": 0,
         "unreviewed": 0,
         "not-applicable": 0
@@ -101359,6 +101359,12 @@
           "tests/corpus/5835-util-format-integer-specifiers.ts",
           "tests/corpus/5884-inspect-layout-options.ts",
           "tests/corpus/6428-promisify-callback-functions.ts",
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
           "tests/corpus/node24-deep-equality-properties.js",
           "tests/corpus/node24-deep-equality.cjs",
           "tests/corpus/node24-deep-equality.ts",
@@ -101385,6 +101391,7 @@
           "tests/corpus/text-codec-values/main.ts",
           "tests/fixtures/node-types/deep-equality.ts",
           "tests/fixtures/node-types/env-files.ts",
+          "tests/fixtures/node-types/mime-type.ts",
           "tests/fixtures/node-types/promisify-callback-functions.ts",
           "tests/fixtures/node-types/promisify-crypto.ts",
           "tests/fixtures/node-types/promisify-dns.ts",
@@ -101490,8 +101497,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "partial",
+        "evidence": "compiler-dedicated:util.MIMEType",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101513,8 +101529,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mime.toString",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101536,8 +101561,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mime.toJSON",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101559,8 +101593,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:MIMEType.parse",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101674,8 +101717,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "partial",
+        "evidence": "compiler-dedicated:util.MIMEParams",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101697,8 +101749,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams.delete",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101720,8 +101781,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams.entries",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101743,8 +101813,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams.get",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101766,8 +101845,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams.has",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101789,8 +101877,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams.keys",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101812,8 +101909,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams.set",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101835,8 +101941,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams.values",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },
@@ -101858,8 +101973,17 @@
         "inherited": true
       },
       "static": {
-        "status": "not-implemented",
-        "evidence": "compiler-unmatched:util"
+        "status": "supported",
+        "evidence": "compiler-dedicated:mimeParams",
+        "tests": [
+          "tests/corpus/6830-mime-type-parse.ts",
+          "tests/corpus/6831-mime-type-errors.ts",
+          "tests/corpus/6832-mime-params.ts",
+          "tests/corpus/6833-mime-type-values.ts",
+          "tests/corpus/6834-mime-type-untyped.cjs",
+          "tests/corpus/6835-mime-type-text.ts",
+          "tests/fixtures/node-types/mime-type.ts"
+        ]
       },
       "anchorSource": "exact"
     },

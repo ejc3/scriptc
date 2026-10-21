@@ -53,6 +53,7 @@
 #include "scr_json.h"
 #include "scr_event_target.h"
 #include "scr_blob.h"
+#include "scr_mime.h"
 #include "scr_object.h"
 #include "scr_region.h"
 #include "scr_itable.h"

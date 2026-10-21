@@ -283,6 +283,24 @@ test("node-types: net.SocketAddress and net.BlockList under @types/node", async 
   expect(comparableStderr(native.stderr)).toBe(node.stderr);
 });
 
+test("node-types: util.MIMEType and util.MIMEParams under @types/node", async () => {
+  const outDir = outDirFor("mime-type");
+  const entry = join(nodeTypesDir, "mime-type.ts");
+  const result = await compile(entry, {
+    outPath: join(outDir, process.platform === "win32" ? "mime-type.exe" : "mime-type"),
+    outDir,
+    sanitize,
+  });
+  expect(result.ok, !result.ok ? JSON.stringify(result.diagnostics, null, 2) : "").toBe(true);
+  if (!result.ok) return;
+  const [native, node] = await Promise.all([
+    execFileAsync(result.binaryPath),
+    execFileAsync(process.execPath, ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", entry]),
+  ]);
+  expect(native.stdout).toBe(node.stdout);
+  expect(comparableStderr(native.stderr)).toBe(node.stderr);
+});
+
 test("node-types: timers/promises resolve values and setInterval iteration under @types/node", async () => {
   const outDir = outDirFor("timers-promises");
   const entry = join(nodeTypesDir, "timers-promises.ts");

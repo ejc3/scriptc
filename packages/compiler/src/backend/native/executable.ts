@@ -205,6 +205,7 @@ const RUNTIME_UNITS: readonly RuntimeUnit[] = [
   // Blob and File (every blob.* call selects dynAsync, whose unit boxes
   // their reads as dyn promises).
   unit((u) => u.opts.dynAsync, "scr_blob.c"),
+  unit((u) => u.opts.dynAsync, "scr_mime.c"),
   // The zlib UNIT (scr_zlib.c) gates on zlib.* IR use; the LINK (system
   // libz on the default host-clang build, vendored objects on Zig builds)
   // also serves the native fetch's gzip decoder — spread exactly once.

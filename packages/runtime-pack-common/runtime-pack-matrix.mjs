@@ -77,6 +77,8 @@ export const OPTIONAL_RUNTIME_SOURCES = [
   ["scr_perf_loop.c", "perfLoop"],
   // Blob and File box their reads as dyn promises through scr_async_dyn.c.
   ["scr_blob.c", "dynAsync"],
+  // util.MIMEType and util.MIMEParams handles.
+  ["scr_mime.c", "dynAsync"],
   ["scr_zlib.c", "zlib"],
   ["scr_events.c", "events"],
   ["scr_readline.c", "events"],

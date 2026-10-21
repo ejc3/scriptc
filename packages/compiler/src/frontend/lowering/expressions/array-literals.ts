@@ -28,6 +28,7 @@ import { lowerCollectionSpread } from "../containers/collection-methods.js";
 import { strCharsCall } from "../containers/array-construction.js";
 import { generatorDrain } from "../iterator-adapters.js";
 import { isSearchParamsIterable } from "../builtins/url.js";
+import { isMimeParamsIterable } from "../builtins/mime-type.js";
 import { varRef } from "../../../ir/build.js";
 import { arrayValueStore } from "../array-values.js";
 import { classGeneratorIterable } from "../class-iterables.js";
@@ -441,10 +442,13 @@ export function lowerArrayLiteral(
         const drained = generatorDrain(lowerer, src, type.elem, locOf(el));
         if (drained) src = drained;
       }
-      // `[...sp]` and `[...sp.entries()]` over a URLSearchParams: its
-      // checked-dynamic view iterates the live pair list, and the drained
-      // [name, value] pairs convert to the literal's tuple elements.
-      const searchParamsSource = isSearchParamsIterable(lowerer, el.expression);
+      // `[...sp]` and `[...sp.entries()]` over a URLSearchParams or a
+      // util.MIMEParams: its checked-dynamic view iterates the live pair
+      // list, and the drained [name, value] pairs convert to the literal's
+      // tuple elements.
+      const searchParamsSource =
+        isSearchParamsIterable(lowerer, el.expression) ||
+        isMimeParamsIterable(lowerer, el.expression);
       if (src.type.kind === "searchParams") src = lowerer.coerceInto(el.expression, src, DYN);
       // A native checked iterable can supply scalar elements even when
       // the checker inferred a typed array from its producer. Drain once

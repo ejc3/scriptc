@@ -2858,6 +2858,19 @@ function mapTypeInner(type: ts.Type, ctx: TypeMapperCtx): IrType | null {
   ) {
     return DYN;
   }
+  // node:util's MIMEType and MIMEParams: native handles (scr_mime.c)
+  // whose getters, setters and methods dispatch through the handle.
+  if (
+    psym !== undefined &&
+    (ts.symbolName(psym) === "MIMEType" || ts.symbolName(psym) === "MIMEParams") &&
+    psym.declarations.some(
+      (d) =>
+        (ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d)) &&
+        ctx.isStdlibFile(ts.getSourceFileOfNode(d)),
+    )
+  ) {
+    return DYN;
+  }
   // WebCrypto: the crypto global and its subtle object are dynamic
   // objects, CryptoKey values are native handles (scr_webcrypto.c), and
   // the algorithm dictionaries the methods take and keys report are plain
