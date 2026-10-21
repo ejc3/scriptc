@@ -5,16 +5,44 @@
  * a static table with no runtime object to pass. When every `this` in such
  * a function names another export the module writes (`this.X` where the
  * module has `exports.X = …`), the exports object is never replaced, and
- * the module itself calls the function only through `exports.f(…)`, `this.X`
- * reads `exports.X`: the same member Node reads for those calls. Only a
- * caller that detaches the function or rebinds its `this` would observe
- * the difference. */
+ * the module itself calls the function only through `exports.f(…)` or
+ * `this.f(…)`, `this.X` reads `exports.X`: the same member Node reads for
+ * those calls. A function that declares its own `exports` binding keeps
+ * its `this`. Only a caller outside the module that detaches the function
+ * or rebinds its `this` would observe the difference. */
 import * as ts from "./ts7/syntax.js";
 import { applyEdits, unparen, type Edit } from "./npm-static-bundled-chunks.js";
 
 /** True when the text may hold such a function (a cheap probe). */
 export function mayHoldExportsThis(source: string): boolean {
   return source.includes("this.") && source.includes("exports.");
+}
+
+/** Whether `id` names the binding a declaration introduces. */
+function isDeclaredName(id: ts.Identifier): boolean {
+  const parent = id.parent;
+  if (parent === undefined) return false;
+  if (ts.isBindingElement(parent)) return parent.name === id;
+  return (
+    (ts.isVariableDeclaration(parent) ||
+      ts.isParameterDeclaration(parent) ||
+      ts.isFunctionDeclaration(parent) ||
+      ts.isFunctionExpression(parent) ||
+      ts.isClassDeclaration(parent) ||
+      ts.isClassExpression(parent)) &&
+    parent.name === id
+  );
+}
+
+/** Whether `root` declares a binding named `exports` (at any depth). */
+function declaresExports(root: ts.Node): boolean {
+  let found = false;
+  ts.walkPreorder(root, (n) => {
+    if (found) return "stop";
+    if (ts.isIdentifier(n) && n.text === "exports" && isDeclaredName(n)) found = true;
+    return undefined;
+  });
+  return found;
 }
 
 function exportsMember(e: ts.Expression): string | null {
@@ -73,6 +101,19 @@ export function rewriteExportsThis(sf: ts.SourceFile): string | null {
     return undefined;
   });
   if (replaced) return null;
+  // A module-scope `exports` binding is not the module's exports object.
+  if (
+    sf.statements.nodes.some(
+      (stmt) =>
+        (ts.isVariableStatement(stmt) &&
+          stmt.declarationList.declarations.nodes.some(
+            (d) => ts.isIdentifier(d.name) && d.name.text === "exports",
+          )) ||
+        ((ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) &&
+          stmt.name?.text === "exports"),
+    )
+  )
+    return null;
   const edits: Edit[] = [];
   for (const [name, fn] of functions) {
     // `this` uses directly in the body (arrow functions share it).
@@ -101,13 +142,17 @@ export function rewriteExportsThis(sf: ts.SourceFile): string | null {
     };
     fn.forEachChild(walk);
     if (!ok || uses.length === 0) continue;
-    // Inside the module the function is only called through the exports.
+    // `exports` in the respelled reads must name the module's object.
+    if (declaresExports(fn)) continue;
+    // Inside the module the function is only called through the exports,
+    // or through `this` in an exported function (respelled `exports`).
     let detached = false;
     ts.walkPreorder(sf, (n) => {
       if (detached) return "stop";
       if (!ts.isPropertyAccessExpression(n) || !ts.isIdentifier(n.name) || n.name.text !== name)
         return undefined;
-      if (exportsMember(n) !== name) return undefined;
+      if (exportsMember(n) !== name && unparen(n.expression).kind !== ts.SyntaxKind.ThisKeyword)
+        return undefined;
       const parent = n.parent;
       const isStore =
         parent !== undefined &&

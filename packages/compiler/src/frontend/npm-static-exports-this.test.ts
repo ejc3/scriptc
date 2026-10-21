@@ -66,3 +66,51 @@ test("other uses of `this`, replaced exports and detached functions keep their t
     ),
   ).toBeNull();
 });
+
+test("a function another export detaches through `this` keeps its text", () => {
+  // `a` reads `this.b` as a value and calls it without a receiver, so `b`
+  // runs with the global `this`, where `c` is missing.
+  const out = expectSameBehavior(
+    `exports.a = function () {
+  var g = this.b;
+  try { return g(); } catch (e) { return e.constructor.name; }
+};
+exports.b = function () { return this.c(); };
+exports.c = function () { return "c"; };
+`,
+    `const lib = require("LIB"); console.log(lib.a(), lib.b());`,
+  );
+  expect(out).toContain("var g = exports.b;");
+  expect(out).toContain("return this.c();");
+});
+
+test("a function that declares its own `exports` binding keeps its text", () => {
+  // A parameter, a var, an arrow parameter, the function name and a catch
+  // binding each shadow the module's exports object.
+  for (const fn of [
+    `function (exports) { return this.g(); }`,
+    `function () { var exports = { g: () => "local" }; return this.g(); }`,
+    `function () { return [1].map((exports) => this.g())[0]; }`,
+    `function exports() { return this.g(); }`,
+    `function () { try { throw 0; } catch (exports) { return this.g(); } }`,
+  ]) {
+    expect(
+      rewrite(`exports.f = ${fn};\nexports.g = function () { return "g"; };\n`),
+      fn,
+    ).toBeNull();
+  }
+  // A module-scope binding named exports is not the exports object.
+  expect(
+    rewrite(
+      `var exports = module.exports;\nexports.f = function () { return this.g(); };\nexports.g = function () { return "g"; };\n`,
+    ),
+  ).toBeNull();
+  // The shadowed shapes run as Node runs them.
+  expectSameBehavior(
+    `exports.f = function (exports) { return this.g(); };
+exports.g = function () { return "g"; };
+exports.h = function () { return this.g(); };
+`,
+    `const lib = require("LIB"); console.log(lib.f({ g: () => "shadow" }), lib.h());`,
+  );
+});
