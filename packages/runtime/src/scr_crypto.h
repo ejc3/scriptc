@@ -83,6 +83,9 @@ ScrDyn *scr_crypto_generate_key_sync(ScrDyn *type, ScrDyn *options);
 ScrBytes *scr_crypto_key_object_input(ScrDyn *key);
 bool scr_crypto_is_key_object(const ScrDyn *value);
 const unsigned char *scr_key_object_bytes(const ScrDyn *value, size_t *len);
+/* crypto.getCipherInfo(nameOrNid[, options]) (scr_lib.c): +1, or NULL with
+ * Node's error pending. */
+ScrDyn *scr_crypto_get_cipher_info(const ScrDyn *name_or_nid, const ScrDyn *options);
 /* crypto.createCipheriv (decrypt false) and crypto.createDecipheriv
  * (decrypt true) over checked-dynamic arguments (scr_cipher.c, linked
  * with the vendored mbedTLS archive). +1 handle, or NULL with Node's
